@@ -6,8 +6,10 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
 }
+
+
 
 // ============================================
 // MODUL 1: Manajemen User & Cabang (Master Data)
