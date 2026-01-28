@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { cookieStorage } from '@/shared/lib/cookie-storage';
-import { createLogoutMutation } from '../queries/auth.queries';
+import { logoutMutationOptions } from '../queries/auth.queries';
 
 /**
  * Logout Hook
@@ -12,7 +12,7 @@ export function useLogout() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    ...createLogoutMutation(),
+    ...logoutMutationOptions,
     onSuccess: () => {
       // Clear token from cookies
       cookieStorage.removeToken();

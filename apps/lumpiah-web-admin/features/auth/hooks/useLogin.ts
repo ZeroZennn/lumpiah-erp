@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { queryKeys } from '@/shared/lib/query-keys.factory';
 import { cookieStorage } from '@/shared/lib/cookie-storage';
-import { createLoginMutation } from '../queries/auth.queries';
+import { loginMutationOptions } from '../queries/auth.queries';
 import { LoginResponse } from '../api/auth.types';
 
 /**
@@ -14,7 +14,7 @@ export function useLogin() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    ...createLoginMutation(),
+    ...loginMutationOptions,
     onSuccess: (data: LoginResponse) => {
       // Store token in cookies
       cookieStorage.setToken(data.access_token);
@@ -39,7 +39,7 @@ export function useLoginWithCallbacks() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    ...createLoginMutation(),
+    ...loginMutationOptions,
     onSuccess: () => {
       // Invalidate queries
       queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });

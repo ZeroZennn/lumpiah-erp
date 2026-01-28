@@ -1,4 +1,4 @@
-import { useMutation, useQuery, UseQueryOptions } from '@tanstack/react-query';
+import { UseQueryOptions, UseMutationOptions } from '@tanstack/react-query';
 import { queryKeys } from '@/shared/lib/query-keys.factory';
 import { cookieStorage } from '@/shared/lib/cookie-storage';
 import { authApi } from '../api/auth.api';
@@ -23,33 +23,29 @@ export const currentUserQueryOptions = {
 } satisfies UseQueryOptions<User>;
 
 /**
- * Login mutation factory
+ * Login mutation options
  */
-export const createLoginMutation = () => {
-  return useMutation({
-    mutationFn: async (credentials: LoginRequest) => {
-      const response = await authApi.login(credentials);
-      return response.data;
-    },
-    onSuccess: (data: LoginResponse) => {
-      // Store token in cookies
-      cookieStorage.setToken(data.access_token);
-    },
-  });
-};
+export const loginMutationOptions = {
+  mutationFn: async (credentials: LoginRequest) => {
+    const response = await authApi.login(credentials);
+    return response.data;
+  },
+  onSuccess: (data: LoginResponse) => {
+    // Store token in cookies
+    cookieStorage.setToken(data.access_token);
+  },
+} satisfies UseMutationOptions<LoginResponse, Error, LoginRequest>;
 
 /**
- * Logout mutation factory
+ * Logout mutation options
  */
-export const createLogoutMutation = () => {
-  return useMutation({
-    mutationFn: async () => {
-      const response = await authApi.logout();
-      return response.data;
-    },
-    onSuccess: () => {
-      // Clear token from cookies
-      cookieStorage.removeToken();
-    },
-  });
-};
+export const logoutMutationOptions = {
+  mutationFn: async () => {
+    const response = await authApi.logout();
+    return response.data;
+  },
+  onSuccess: () => {
+    // Clear token from cookies
+    cookieStorage.removeToken();
+  },
+} satisfies UseMutationOptions<unknown, Error, void>;
