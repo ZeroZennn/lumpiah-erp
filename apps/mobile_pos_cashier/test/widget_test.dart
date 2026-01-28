@@ -1,30 +1,121 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// Widget tests for Lumpia POS application
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:mobile_pos_cashier/main.dart';
+import 'package:mobile_pos_cashier/features/pos/bloc/cart_cubit.dart';
+import 'package:mobile_pos_cashier/local_db/entities/local_product.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('CartCubit Unit Tests', () {
+    late CartCubit cubit;
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    setUp(() {
+      cubit = CartCubit();
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    tearDown(() {
+      cubit.close();
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('Initial state should have empty items and zero totals', () {
+      expect(cubit.state.items, isEmpty);
+      expect(cubit.state.totalAmount, 0.0);
+      expect(cubit.state.totalQty, 0);
+    });
+
+    test('addToCart should add a new item to cart', () {
+      final product = LocalProduct()
+        ..serverId = 1
+        ..name = 'Lumpia Ayam'
+        ..category = 'Lumpia'
+        ..price = 5000
+        ..unit = 'pcs';
+
+      cubit.addToCart(product);
+
+      expect(cubit.state.items.length, 1);
+      expect(cubit.state.items.first.product.name, 'Lumpia Ayam');
+      expect(cubit.state.items.first.quantity, 1);
+      expect(cubit.state.items.first.subtotal, 5000);
+      expect(cubit.state.totalAmount, 5000);
+      expect(cubit.state.totalQty, 1);
+    });
+
+    test('addToCart should increment quantity if product already exists', () {
+      final product = LocalProduct()
+        ..serverId = 1
+        ..name = 'Lumpia Ayam'
+        ..category = 'Lumpia'
+        ..price = 5000
+        ..unit = 'pcs';
+
+      cubit.addToCart(product);
+      cubit.addToCart(product);
+
+      expect(cubit.state.items.length, 1);
+      expect(cubit.state.items.first.quantity, 2);
+      expect(cubit.state.items.first.subtotal, 10000);
+      expect(cubit.state.totalAmount, 10000);
+      expect(cubit.state.totalQty, 2);
+    });
+
+    test('addToCart should add multiple different products', () {
+      final product1 = LocalProduct()
+        ..serverId = 1
+        ..name = 'Lumpia Ayam'
+        ..category = 'Lumpia'
+        ..price = 5000
+        ..unit = 'pcs';
+
+      final product2 = LocalProduct()
+        ..serverId = 2
+        ..name = 'Es Teh'
+        ..category = 'Minuman'
+        ..price = 3000
+        ..unit = 'gelas';
+
+      cubit.addToCart(product1);
+      cubit.addToCart(product2);
+
+      expect(cubit.state.items.length, 2);
+      expect(cubit.state.totalAmount, 8000);
+      expect(cubit.state.totalQty, 2);
+    });
+
+    test('removeFromCart should remove item by product serverId', () {
+      final product = LocalProduct()
+        ..serverId = 1
+        ..name = 'Lumpia Ayam'
+        ..category = 'Lumpia'
+        ..price = 5000
+        ..unit = 'pcs';
+
+      cubit.addToCart(product);
+      expect(cubit.state.items.length, 1);
+
+      cubit.removeFromCart(1);
+      expect(cubit.state.items, isEmpty);
+      expect(cubit.state.totalAmount, 0.0);
+      expect(cubit.state.totalQty, 0);
+    });
+
+    test('clearCart should reset state to initial values', () {
+      final product = LocalProduct()
+        ..serverId = 1
+        ..name = 'Lumpia Ayam'
+        ..category = 'Lumpia'
+        ..price = 5000
+        ..unit = 'pcs';
+
+      cubit.addToCart(product);
+      cubit.addToCart(product);
+      expect(cubit.state.items.length, 1);
+      expect(cubit.state.totalQty, 2);
+
+      cubit.clearCart();
+
+      expect(cubit.state.items, isEmpty);
+      expect(cubit.state.totalAmount, 0.0);
+      expect(cubit.state.totalQty, 0);
+    });
   });
 }
