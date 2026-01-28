@@ -1,0 +1,39 @@
+#!/usr/bin/env sh
+
+echo "🔍 Running pre-push checks..."
+echo ""
+
+# Build API Server (NestJS)
+echo "📦 Building API Server..."
+cd apps/api-server
+npm run build
+if [ $? -ne 0 ]; then
+  echo "❌ API Server build failed!"
+  exit 1
+fi
+echo "✅ API Server build successful!"
+echo ""
+
+# Build Web Admin (Next.js)
+echo "📦 Building Web Admin..."
+cd ../lumpiah-web-admin
+npm run build
+if [ $? -ne 0 ]; then
+  echo "❌ Web Admin build failed!"
+  exit 1
+fi
+echo "✅ Web Admin build successful!"
+echo ""
+
+# Flutter analyze (optional - just checks for errors, doesn't build APK)
+echo "📱 Analyzing Flutter project..."
+cd ../mobile_pos_cashier
+flutter analyze --no-fatal-infos --no-fatal-warnings
+if [ $? -ne 0 ]; then
+  echo "❌ Flutter analysis found errors!"
+  exit 1
+fi
+echo "✅ Flutter analysis passed!"
+echo ""
+
+echo "🎉 All pre-push checks passed! Pushing..."

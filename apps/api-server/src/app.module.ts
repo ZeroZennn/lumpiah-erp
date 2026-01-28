@@ -13,7 +13,18 @@ import { SystemModule } from './modules/system/system.module';
 import { CommonModule } from './common/common.module';
 
 @Module({
-  imports: [PosModule, InventoryModule, ReportsModule, BranchesModule, DssEngineModule, ProductionModule, HrModule, UsersModule, SystemModule, CommonModule],
+  imports: [
+    PosModule,
+    InventoryModule,
+    ReportsModule,
+    BranchesModule,
+    DssEngineModule,
+    ProductionModule,
+    HrModule,
+    UsersModule,
+    SystemModule,
+    CommonModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
