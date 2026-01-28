@@ -4,8 +4,9 @@ import 'package:mobile_pos_cashier/features/pos/bloc/cart_cubit.dart';
 import 'package:mobile_pos_cashier/local_db/entities/local_product.dart';
 import 'package:intl/intl.dart';
 
-/// High-fidelity Modern Tablet POS Screen
-/// Layout: Left (Product Catalog - Flex 7) | Right (Cart Panel - Flex 3)
+/// High-fidelity Modern POS Screen with Responsive Layout
+/// - Tablet: Side-by-side layout (Product Catalog | Cart Panel)
+/// - Phone: Stacked layout with bottom sheet cart
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
 
@@ -98,22 +99,108 @@ class _PosScreenState extends State<PosScreen> {
     super.dispose();
   }
 
+  // Determine if we're on a tablet based on screen width
+  bool _isTablet(BuildContext context) {
+    return MediaQuery.of(context).size.width >= 600;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isTablet = _isTablet(context);
+
     return Scaffold(
       body: SafeArea(
-        child: Row(
-          children: [
-            // ============================================================
-            // LEFT SIDE - Product Catalog (Flex 7)
-            // ============================================================
-            Expanded(flex: 7, child: _buildProductCatalog()),
+        child: isTablet ? _buildTabletLayout() : _buildPhoneLayout(),
+      ),
+      // Show FAB only on phone to open cart
+      floatingActionButton: isTablet ? null : _buildCartFab(),
+    );
+  }
 
-            // ============================================================
-            // RIGHT SIDE - Cart Panel (Flex 3)
-            // ============================================================
-            Expanded(flex: 3, child: _buildCartPanel()),
-          ],
+  // ============================================================================
+  // TABLET LAYOUT - Side by side
+  // ============================================================================
+  Widget _buildTabletLayout() {
+    return Row(
+      children: [
+        // LEFT SIDE - Product Catalog (Flex 7)
+        Expanded(flex: 7, child: _buildProductCatalog(isTablet: true)),
+        // RIGHT SIDE - Cart Panel (Flex 3)
+        Expanded(flex: 3, child: _buildCartPanel()),
+      ],
+    );
+  }
+
+  // ============================================================================
+  // PHONE LAYOUT - Full screen catalog with bottom sheet cart
+  // ============================================================================
+  Widget _buildPhoneLayout() {
+    return _buildProductCatalog(isTablet: false);
+  }
+
+  Widget _buildCartFab() {
+    return BlocBuilder<CartCubit, CartState>(
+      builder: (context, state) {
+        return FloatingActionButton.extended(
+          onPressed: () => _showCartBottomSheet(context),
+          backgroundColor: const Color(0xFFFFB300),
+          icon: Badge(
+            label: Text('${state.totalQty}'),
+            isLabelVisible: state.totalQty > 0,
+            child: const Icon(Icons.shopping_cart, color: Colors.white),
+          ),
+          label: Text(
+            state.items.isEmpty
+                ? 'Cart'
+                : NumberFormat.currency(
+                    locale: 'id_ID',
+                    symbol: 'Rp ',
+                    decimalDigits: 0,
+                  ).format(state.totalAmount),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCartBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle bar
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Cart content
+              Expanded(
+                child: _buildCartPanelContent(
+                  scrollController: scrollController,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -122,27 +209,38 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================================
   // Product Catalog Section
   // ============================================================================
-  Widget _buildProductCatalog() {
+  Widget _buildProductCatalog({required bool isTablet}) {
+    final crossAxisCount = isTablet ? 4 : 2;
+    final childAspectRatio = isTablet ? 0.85 : 0.75;
+
     return Container(
       color: const Color(0xFFF5F5F5),
       child: Column(
         children: [
           // Header with search and categories
-          _buildCatalogHeader(),
+          _buildCatalogHeader(isTablet: isTablet),
           // Product Grid
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 12, 20),
+              padding: EdgeInsets.fromLTRB(
+                isTablet ? 20 : 12,
+                0,
+                isTablet ? 12 : 12,
+                isTablet ? 20 : 80, // Extra padding for FAB on phone
+              ),
               child: GridView.builder(
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 4,
-                  childAspectRatio: 0.85,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  childAspectRatio: childAspectRatio,
+                  crossAxisSpacing: isTablet ? 16 : 10,
+                  mainAxisSpacing: isTablet ? 16 : 10,
                 ),
                 itemCount: _filteredProducts.length,
                 itemBuilder: (context, index) {
-                  return _ProductCard(product: _filteredProducts[index]);
+                  return _ProductCard(
+                    product: _filteredProducts[index],
+                    isCompact: !isTablet,
+                  );
                 },
               ),
             ),
@@ -152,70 +250,48 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-  Widget _buildCatalogHeader() {
+  Widget _buildCatalogHeader({required bool isTablet}) {
     return Padding(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(isTablet ? 20 : 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title and Search Row
-          Row(
-            children: [
-              const Text(
-                'Menu',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2D2D2D),
-                ),
-              ),
-              const SizedBox(width: 24),
-              // Search Bar
-              Expanded(
-                child: Container(
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(15),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (value) => setState(() => _searchQuery = value),
-                    decoration: InputDecoration(
-                      hintText: 'Cari produk...',
-                      hintStyle: TextStyle(color: Colors.grey[400]),
-                      prefixIcon: Icon(Icons.search, color: Colors.grey[400]),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 20),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _searchQuery = '');
-                              },
-                            )
-                          : null,
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 14,
-                      ),
-                    ),
+          if (isTablet)
+            Row(
+              children: [
+                const Text(
+                  'Menu',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2D2D2D),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
+                const SizedBox(width: 24),
+                Expanded(child: _buildSearchBar()),
+              ],
+            )
+          else
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Menu',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF2D2D2D),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildSearchBar(),
+              ],
+            ),
+          SizedBox(height: isTablet ? 20 : 12),
           // Category Chips
           SizedBox(
-            height: 44,
+            height: 40,
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
               itemCount: _categories.length,
@@ -223,10 +299,11 @@ class _PosScreenState extends State<PosScreen> {
                 final category = _categories[index];
                 final isSelected = _selectedCategory == category;
                 return Padding(
-                  padding: EdgeInsets.only(right: 12, left: index == 0 ? 0 : 0),
+                  padding: EdgeInsets.only(right: isTablet ? 12 : 8),
                   child: _CategoryChip(
                     label: category,
                     isSelected: isSelected,
+                    isCompact: !isTablet,
                     onTap: () => setState(() => _selectedCategory = category),
                   ),
                 );
@@ -234,6 +311,46 @@ class _PosScreenState extends State<PosScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(15),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (value) => setState(() => _searchQuery = value),
+        decoration: InputDecoration(
+          hintText: 'Cari produk...',
+          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+          prefixIcon: Icon(Icons.search, color: Colors.grey[400], size: 20),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                  },
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+        ),
       ),
     );
   }
@@ -253,22 +370,26 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ],
       ),
-      child: Column(
-        children: [
-          // Cart Header
-          _buildCartHeader(),
-          // Cart Items List
-          Expanded(child: _buildCartItems()),
-          // Cart Footer with totals and checkout
-          _buildCartFooter(),
-        ],
-      ),
+      child: _buildCartPanelContent(),
+    );
+  }
+
+  Widget _buildCartPanelContent({ScrollController? scrollController}) {
+    return Column(
+      children: [
+        // Cart Header
+        _buildCartHeader(),
+        // Cart Items List
+        Expanded(child: _buildCartItems(scrollController: scrollController)),
+        // Cart Footer with totals and checkout
+        _buildCartFooter(),
+      ],
     );
   }
 
   Widget _buildCartHeader() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
       ),
@@ -278,7 +399,7 @@ class _PosScreenState extends State<PosScreen> {
           const Text(
             'Current Order',
             style: TextStyle(
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
               color: Color(0xFF2D2D2D),
             ),
@@ -287,10 +408,8 @@ class _PosScreenState extends State<PosScreen> {
             builder: (context, state) {
               if (state.items.isEmpty) return const SizedBox.shrink();
               return TextButton.icon(
-                onPressed: () {
-                  context.read<CartCubit>().clearCart();
-                },
-                icon: const Icon(Icons.delete_outline, size: 18),
+                onPressed: () => context.read<CartCubit>().clearCart(),
+                icon: const Icon(Icons.delete_outline, size: 16),
                 label: const Text('Clear'),
                 style: TextButton.styleFrom(foregroundColor: Colors.red[400]),
               );
@@ -301,7 +420,7 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-  Widget _buildCartItems() {
+  Widget _buildCartItems({ScrollController? scrollController}) {
     return BlocBuilder<CartCubit, CartState>(
       builder: (context, state) {
         if (state.items.isEmpty) {
@@ -311,18 +430,18 @@ class _PosScreenState extends State<PosScreen> {
               children: [
                 Icon(
                   Icons.shopping_basket_outlined,
-                  size: 80,
+                  size: 64,
                   color: Colors.grey[300],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Text(
                   'Keranjang kosong',
-                  style: TextStyle(fontSize: 16, color: Colors.grey[400]),
+                  style: TextStyle(fontSize: 14, color: Colors.grey[400]),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Text(
                   'Pilih produk untuk memulai',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[400]),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[400]),
                 ),
               ],
             ),
@@ -330,12 +449,12 @@ class _PosScreenState extends State<PosScreen> {
         }
 
         return ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          controller: scrollController,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           itemCount: state.items.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (context, index) {
-            return _CartItemTile(item: state.items[index]);
-          },
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, index) =>
+              _CartItemTile(item: state.items[index]),
         );
       },
     );
@@ -351,11 +470,11 @@ class _PosScreenState extends State<PosScreen> {
     return BlocBuilder<CartCubit, CartState>(
       builder: (context, state) {
         final subtotal = state.totalAmount;
-        final tax = subtotal * 0.1; // 10% tax
+        final tax = subtotal * 0.1;
         final total = subtotal + tax;
 
         return Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
             boxShadow: [
@@ -366,77 +485,81 @@ class _PosScreenState extends State<PosScreen> {
               ),
             ],
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Summary rows
-              _buildSummaryRow('Subtotal', formatter.format(subtotal)),
-              const SizedBox(height: 8),
-              _buildSummaryRow('Tax (10%)', formatter.format(tax)),
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Divider(),
-              ),
-              // Total row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Total',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2D2D2D),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildSummaryRow('Subtotal', formatter.format(subtotal)),
+                const SizedBox(height: 4),
+                _buildSummaryRow('Tax (10%)', formatter.format(tax)),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D2D2D),
+                      ),
                     ),
-                  ),
-                  Text(
-                    formatter.format(total),
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFFFB300),
+                    Text(
+                      formatter.format(total),
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFFFB300),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Checkout Button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: state.items.isEmpty
-                      ? null
-                      : () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Processing payment: ${formatter.format(total)}',
+                  ],
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: state.items.isEmpty
+                        ? null
+                        : () {
+                            Navigator.of(
+                              context,
+                            ).pop(); // Close bottom sheet if open
+                            ScaffoldMessenger.of(context).clearSnackBars();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Processing: ${formatter.format(total)}',
+                                ),
+                                backgroundColor: const Color(0xFFFFB300),
                               ),
-                              backgroundColor: const Color(0xFFFFB300),
-                            ),
-                          );
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFFB300),
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: Colors.grey[300],
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                            );
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFFB300),
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: Colors.grey[300],
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                  ),
-                  child: Text(
-                    state.items.isEmpty
-                        ? 'Select Items'
-                        : 'Charge - ${formatter.format(total)}',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                    child: Text(
+                      state.items.isEmpty
+                          ? 'Select Items'
+                          : 'Charge - ${formatter.format(total)}',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -447,11 +570,11 @@ class _PosScreenState extends State<PosScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
+        Text(label, style: TextStyle(fontSize: 13, color: Colors.grey[600])),
         Text(
           value,
           style: const TextStyle(
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: FontWeight.w500,
             color: Color(0xFF2D2D2D),
           ),
@@ -467,27 +590,32 @@ class _PosScreenState extends State<PosScreen> {
 class _CategoryChip extends StatelessWidget {
   final String label;
   final bool isSelected;
+  final bool isCompact;
   final VoidCallback onTap;
 
   const _CategoryChip({
     required this.label,
     required this.isSelected,
     required this.onTap,
+    this.isCompact = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: isSelected ? const Color(0xFFFFB300) : Colors.white,
-      borderRadius: BorderRadius.circular(22),
+      borderRadius: BorderRadius.circular(20),
       elevation: isSelected ? 2 : 0,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(20),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+          padding: EdgeInsets.symmetric(
+            horizontal: isCompact ? 16 : 24,
+            vertical: isCompact ? 8 : 10,
+          ),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isSelected ? Colors.transparent : Colors.grey[300]!,
             ),
@@ -495,6 +623,7 @@ class _CategoryChip extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
+              fontSize: isCompact ? 13 : 14,
               color: isSelected ? Colors.white : Colors.grey[600],
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
             ),
@@ -510,8 +639,9 @@ class _CategoryChip extends StatelessWidget {
 // ============================================================================
 class _ProductCard extends StatelessWidget {
   final LocalProduct product;
+  final bool isCompact;
 
-  const _ProductCard({required this.product});
+  const _ProductCard({required this.product, this.isCompact = false});
 
   @override
   Widget build(BuildContext context) {
@@ -524,95 +654,69 @@ class _ProductCard extends StatelessWidget {
     return Card(
       elevation: 2,
       shadowColor: Colors.black.withAlpha(20),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(isCompact ? 12 : 16),
+      ),
       child: InkWell(
-        onTap: () => context.read<CartCubit>().addToCart(product),
-        borderRadius: BorderRadius.circular(16),
-        child: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Product Image Placeholder
-                  Expanded(
-                    child: Center(
-                      child: Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF8E1),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(
-                          _getCategoryIcon(product.category),
-                          size: 40,
-                          color: const Color(0xFFFFB300),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Product Name
-                  Text(
-                    product.name,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2D2D2D),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  // Price
-                  Text(
-                    formatter.format(product.price),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFFFB300),
-                    ),
-                  ),
-                ],
-              ),
+        onTap: () {
+          context.read<CartCubit>().addToCart(product);
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${product.name} added'),
+              duration: const Duration(milliseconds: 500),
+              behavior: SnackBarBehavior.floating,
             ),
-            // Add Button
-            Positioned(
-              right: 8,
-              bottom: 8,
-              child: Material(
-                color: const Color(0xFFFFB300),
-                borderRadius: BorderRadius.circular(24),
-                elevation: 2,
-                child: InkWell(
-                  onTap: () {
-                    context.read<CartCubit>().addToCart(product);
-                    // Clear existing snackbars to prevent GlobalKey conflict
-                    ScaffoldMessenger.of(context).clearSnackBars();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('${product.name} added'),
-                        duration: const Duration(milliseconds: 500),
-                        behavior: SnackBarBehavior.floating,
-                        margin: const EdgeInsets.all(16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(24),
-                  child: const SizedBox(
-                    width: 40,
-                    height: 40,
-                    child: Icon(Icons.add, color: Colors.white, size: 22),
+          );
+        },
+        borderRadius: BorderRadius.circular(isCompact ? 12 : 16),
+        child: Padding(
+          padding: EdgeInsets.all(isCompact ? 10 : 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Product Image Placeholder
+              Expanded(
+                child: Center(
+                  child: Container(
+                    width: isCompact ? 50 : 80,
+                    height: isCompact ? 50 : 80,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(isCompact ? 10 : 16),
+                    ),
+                    child: Icon(
+                      _getCategoryIcon(product.category),
+                      size: isCompact ? 28 : 40,
+                      color: const Color(0xFFFFB300),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+              SizedBox(height: isCompact ? 6 : 12),
+              // Product Name
+              Text(
+                product.name,
+                style: TextStyle(
+                  fontSize: isCompact ? 12 : 15,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF2D2D2D),
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              SizedBox(height: isCompact ? 2 : 4),
+              // Price
+              Text(
+                formatter.format(product.price),
+                style: TextStyle(
+                  fontSize: isCompact ? 13 : 16,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFFFFB300),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -649,28 +753,28 @@ class _CartItemTile extends StatelessWidget {
     );
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: const Color(0xFFF9F9F9),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
           // Product Icon
           Container(
-            width: 48,
-            height: 48,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: const Color(0xFFFFF8E1),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(
               Icons.restaurant,
               color: Color(0xFFFFB300),
-              size: 24,
+              size: 20,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           // Product Details
           Expanded(
             child: Column(
@@ -679,18 +783,17 @@ class _CartItemTile extends StatelessWidget {
                 Text(
                   item.product.name,
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF2D2D2D),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
                 Text(
                   formatter.format(item.subtotal),
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
                     fontWeight: FontWeight.bold,
                     color: Color(0xFFFFB300),
                   ),
@@ -700,8 +803,8 @@ class _CartItemTile extends StatelessWidget {
           ),
           // Quantity Controls
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Decrease Button
               _QuantityButton(
                 icon: Icons.remove,
                 onTap: () {
@@ -714,26 +817,22 @@ class _CartItemTile extends StatelessWidget {
                   }
                 },
               ),
-              // Quantity Display
               Container(
-                width: 36,
+                width: 28,
                 alignment: Alignment.center,
                 child: Text(
                   '${item.quantity}',
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 14,
                     fontWeight: FontWeight.bold,
                     color: Color(0xFF2D2D2D),
                   ),
                 ),
               ),
-              // Increase Button
               _QuantityButton(
                 icon: Icons.add,
                 isPrimary: true,
-                onTap: () {
-                  context.read<CartCubit>().addToCart(item.product);
-                },
+                onTap: () => context.read<CartCubit>().addToCart(item.product),
               ),
             ],
           ),
@@ -761,16 +860,16 @@ class _QuantityButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: isPrimary ? const Color(0xFFFFB300) : Colors.grey[200],
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(6),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         child: SizedBox(
-          width: 32,
-          height: 32,
+          width: 28,
+          height: 28,
           child: Icon(
             icon,
-            size: 18,
+            size: 16,
             color: isPrimary ? Colors.white : Colors.grey[600],
           ),
         ),
