@@ -16,8 +16,14 @@ export function useLogin() {
   return useMutation({
     ...loginMutationOptions,
     onSuccess: (data: LoginResponse) => {
+      // Defensive check
+      if (!data || !data.accessToken) {
+        console.error('Login successful but no accessToken found in response:', data);
+        return;
+      }
+      
       // Store token in cookies
-      cookieStorage.setToken(data.access_token);
+      cookieStorage.setToken(data.accessToken);
 
       // Invalidate and refetch user data
       queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });

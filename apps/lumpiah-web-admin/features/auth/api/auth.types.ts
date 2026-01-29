@@ -4,28 +4,20 @@
 
 export interface User {
   id: number;
-  username: string;
-  roleId: number;
+  email: string;
+  fullname: string;
+  phoneNumber: string;
+  role: string;
   branchId: number | null;
-  isActive: boolean;
-  createdAt: string;
-  role: {
-    id: number;
-    name: string;
-  };
-  branch?: {
-    id: number;
-    name: string;
-  };
 }
 
 export interface LoginRequest {
-  username: string;
+  email: string;
   password: string;
 }
 
 export interface LoginResponse {
-  access_token: string;
+  accessToken: string;
   user: User;
 }
 

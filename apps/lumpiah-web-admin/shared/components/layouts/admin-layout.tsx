@@ -50,6 +50,8 @@ import { Input } from "@/shared/components/ui/input";
 import { Button } from "@/shared/components/ui/button";
 
 import { cn } from "@/shared/lib/utils";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
+import { useLogout } from "@/features/auth/hooks/useLogout";
 
 // Navigation items grouped by section
 const navGroups = [
@@ -87,6 +89,8 @@ const navGroups = [
 function SidebarNav() {
     const pathname = usePathname();
     const { state } = useSidebar();
+    const { data: user } = useCurrentUser();
+    const logoutMutation = useLogout();
 
     return (
         <>
@@ -161,13 +165,16 @@ function SidebarNav() {
                             <DropdownMenuTrigger asChild>
                                 <SidebarMenuButton className="w-full">
                                     <Avatar className="h-6 w-6">
-                                        <AvatarImage src="" alt="Owner" />
+                                        <AvatarImage src="" alt={user?.fullname || "User"} />
                                         <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                                            OW
+                                            {user?.fullname ? user.fullname.substring(0, 2).toUpperCase() : "US"}
                                         </AvatarFallback>
                                     </Avatar>
-                                    <span className="flex-1 text-left">Owner</span>
-                                    <ChevronLeft className="h-4 w-4 rotate-[-90deg]" />
+                                    <div className="flex flex-col items-start min-w-0 flex-1">
+                                        <span className="text-sm font-medium truncate w-full text-left">{user?.fullname || "Loading..."}</span>
+                                        <span className="text-xs text-muted-foreground truncate w-full text-left">{user?.email || ""}</span>
+                                    </div>
+                                    <ChevronLeft className="h-4 w-4 -rotate-90 ml-auto shrink-0" />
                                 </SidebarMenuButton>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent side="top" className="w-56">
@@ -178,7 +185,11 @@ function SidebarNav() {
                                     Pengaturan
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-destructive">
+                                <DropdownMenuItem
+                                    className="text-destructive cursor-pointer"
+                                    onClick={() => logoutMutation.mutate()}
+                                >
+                                    <ClipboardList className="mr-2 h-4 w-4 rotate-90" />
                                     Keluar
                                 </DropdownMenuItem>
                             </DropdownMenuContent>

@@ -16,7 +16,7 @@ export const currentUserQueryOptions = {
   queryKey: queryKeys.auth.currentUser,
   queryFn: async () => {
     const response = await authApi.getCurrentUser();
-    return response.data;
+    return response as unknown as User;
   },
   staleTime: 5 * 60 * 1000, // 5 minutes
   retry: false, // Don't retry on 401
@@ -28,11 +28,12 @@ export const currentUserQueryOptions = {
 export const loginMutationOptions = {
   mutationFn: async (credentials: LoginRequest) => {
     const response = await authApi.login(credentials);
-    return response.data;
+    // apiClient/axios return the data directly (LoginResponse), not wrapped in { data: ... }
+    return response as unknown as LoginResponse;
   },
   onSuccess: (data: LoginResponse) => {
     // Store token in cookies
-    cookieStorage.setToken(data.access_token);
+    cookieStorage.setToken(data.accessToken);
   },
 } satisfies UseMutationOptions<LoginResponse, Error, LoginRequest>;
 
@@ -42,7 +43,7 @@ export const loginMutationOptions = {
 export const logoutMutationOptions = {
   mutationFn: async () => {
     const response = await authApi.logout();
-    return response.data;
+    return response;
   },
   onSuccess: () => {
     // Clear token from cookies
