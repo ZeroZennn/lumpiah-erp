@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:mobile_pos_cashier/features/pos/bloc/cart_cubit.dart';
 import 'package:mobile_pos_cashier/local_db/entities/local_product.dart';
+import 'package:mobile_pos_cashier/features/pos/repositories/product_repository.dart';
 import 'package:intl/intl.dart';
 
 /// High-fidelity Modern POS Screen with Responsive Layout
@@ -21,77 +22,6 @@ class _PosScreenState extends State<PosScreen> {
 
   // Category list
   final List<String> _categories = ['Semua', 'Lumpia', 'Minuman', 'Paket'];
-
-  // Mock products data
-  static List<LocalProduct> get _mockProducts {
-    return [
-      LocalProduct()
-        ..serverId = 1
-        ..name = 'Lumpia Ayam'
-        ..category = 'Lumpia'
-        ..price = 5000
-        ..unit = 'pcs',
-      LocalProduct()
-        ..serverId = 2
-        ..name = 'Lumpia Udang'
-        ..category = 'Lumpia'
-        ..price = 7000
-        ..unit = 'pcs',
-      LocalProduct()
-        ..serverId = 3
-        ..name = 'Lumpia Sayur'
-        ..category = 'Lumpia'
-        ..price = 4000
-        ..unit = 'pcs',
-      LocalProduct()
-        ..serverId = 4
-        ..name = 'Es Teh Manis'
-        ..category = 'Minuman'
-        ..price = 5000
-        ..unit = 'gelas',
-      LocalProduct()
-        ..serverId = 5
-        ..name = 'Es Jeruk'
-        ..category = 'Minuman'
-        ..price = 6000
-        ..unit = 'gelas',
-      LocalProduct()
-        ..serverId = 6
-        ..name = 'Kopi Hitam'
-        ..category = 'Minuman'
-        ..price = 5000
-        ..unit = 'gelas',
-      LocalProduct()
-        ..serverId = 7
-        ..name = 'Lumpia Spesial'
-        ..category = 'Lumpia'
-        ..price = 10000
-        ..unit = 'pcs',
-      LocalProduct()
-        ..serverId = 8
-        ..name = 'Paket Hemat A'
-        ..category = 'Paket'
-        ..price = 15000
-        ..unit = 'paket',
-      LocalProduct()
-        ..serverId = 9
-        ..name = 'Paket Hemat B'
-        ..category = 'Paket'
-        ..price = 20000
-        ..unit = 'paket',
-    ];
-  }
-
-  List<LocalProduct> get _filteredProducts {
-    return _mockProducts.where((product) {
-      final matchesCategory =
-          _selectedCategory == 'Semua' || product.category == _selectedCategory;
-      final matchesSearch = product.name.toLowerCase().contains(
-        _searchQuery.toLowerCase(),
-      );
-      return matchesCategory && matchesSearch;
-    }).toList();
-  }
 
   @override
   void dispose() {
@@ -219,30 +149,113 @@ class _PosScreenState extends State<PosScreen> {
         children: [
           // Header with search and categories
           _buildCatalogHeader(isTablet: isTablet),
-          // Product Grid
+          // Product Grid with FutureBuilder
           Expanded(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                isTablet ? 20 : 12,
-                0,
-                isTablet ? 12 : 12,
-                isTablet ? 20 : 80, // Extra padding for FAB on phone
-              ),
-              child: GridView.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  childAspectRatio: childAspectRatio,
-                  crossAxisSpacing: isTablet ? 16 : 10,
-                  mainAxisSpacing: isTablet ? 16 : 10,
-                ),
-                itemCount: _filteredProducts.length,
-                itemBuilder: (context, index) {
-                  return _ProductCard(
-                    product: _filteredProducts[index],
-                    isCompact: !isTablet,
+            child: FutureBuilder<List<LocalProduct>>(
+              future: ProductRepository().fetchProducts(),
+              builder: (context, snapshot) {
+                // Loading State
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: Color(0xFFFFB300)),
                   );
-                },
-              ),
+                }
+
+                // Error State
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.error_outline,
+                          size: 64,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Error loading menu',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          snapshot.error.toString(),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                // Success State - Filter products
+                final allProducts = snapshot.data ?? [];
+                final filteredProducts = allProducts.where((product) {
+                  final matchesCategory =
+                      _selectedCategory == 'Semua' ||
+                      product.category == _selectedCategory;
+                  final matchesSearch = product.name.toLowerCase().contains(
+                    _searchQuery.toLowerCase(),
+                  );
+                  return matchesCategory && matchesSearch;
+                }).toList();
+
+                // Empty state
+                if (filteredProducts.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.search_off,
+                          size: 64,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          'No products found',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                // GridView with real data
+                return Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    isTablet ? 20 : 12,
+                    0,
+                    isTablet ? 12 : 12,
+                    isTablet ? 20 : 80, // Extra padding for FAB on phone
+                  ),
+                  child: GridView.builder(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: crossAxisCount,
+                      childAspectRatio: childAspectRatio,
+                      crossAxisSpacing: isTablet ? 16 : 10,
+                      mainAxisSpacing: isTablet ? 16 : 10,
+                    ),
+                    itemCount: filteredProducts.length,
+                    itemBuilder: (context, index) {
+                      return _ProductCard(
+                        product: filteredProducts[index],
+                        isCompact: !isTablet,
+                      );
+                    },
+                  ),
+                );
+              },
             ),
           ),
         ],
