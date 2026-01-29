@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
 }
 
 
@@ -47,7 +48,9 @@ model Role {
 
 model User {
   id           Int      @id @default(autoincrement())
-  username     String   @unique
+  email        String   @unique
+  fullname     String
+  phoneNumber  String?  @map("phone_number")
   passwordHash String   @map("password_hash")
   roleId       Int      @map("role_id")
   branchId     Int?     @map("branch_id") // NULL for Owner (global access)

@@ -8,12 +8,12 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-  ) {}
+  ) { }
 
-  async login(credentials: { username: string; password: string }) {
-    // Find user by username and include role relation
+  async login(credentials: { email: string; password: string }) {
+    // Find user by email and include role relation
     const user = await this.prisma.user.findUnique({
-      where: { username: credentials.username },
+      where: { email: credentials.email },
       include: { role: true },
     });
 
@@ -35,7 +35,9 @@ export class AuthService {
     // Generate JWT token with payload
     const payload = {
       sub: user.id,
-      username: user.username,
+      email: user.email,
+      fullname: user.fullname,
+      phoneNumber: user.phoneNumber,
       role: user.role.name,
       branchId: user.branchId,
     };
@@ -47,7 +49,9 @@ export class AuthService {
       accessToken,
       user: {
         id: user.id,
-        username: user.username,
+        email: user.email,
+        fullname: user.fullname,
+        phoneNumber: user.phoneNumber,
         role: user.role.name,
         branchId: user.branchId,
       },
