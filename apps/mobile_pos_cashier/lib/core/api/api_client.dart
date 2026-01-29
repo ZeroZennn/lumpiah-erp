@@ -13,8 +13,8 @@ class ApiClient {
     // Android Emulator TIDAK BISA pakai 'localhost'. Harus '10.0.2.2'.
     // Jika pakai HP Fisik, ganti dengan IP Laptop (misal: '192.168.1.5')
     String baseUrl = Platform.isAndroid
-        ? 'http://10.0.2.2:3000'
-        : 'http://localhost:3000';
+        ? 'http://10.0.2.2:4000'
+        : 'http://localhost:4000';
 
     BaseOptions options = BaseOptions(
       baseUrl: baseUrl,
