@@ -8,7 +8,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-  ) { }
+  ) {}
 
   async login(credentials: { email: string; password: string }) {
     // Find user by email and include role relation

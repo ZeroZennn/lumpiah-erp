@@ -3,7 +3,7 @@ import { cookieStorage } from './cookie-storage';
 
 // Create axios instance with default config
 export const axiosInstance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001/api',
+  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -66,9 +66,11 @@ axiosInstance.interceptors.response.use(
 
     // Handle 401 - Unauthorized
     if (error.response?.status === 401 && originalRequest) {
-      // Clear token and redirect to login
+      // Clear token
       cookieStorage.removeToken();
-      if (typeof window !== 'undefined') {
+      
+      // Redirect to login only if not already there
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
     }
