@@ -3,25 +3,11 @@
 echo "🔍 Running pre-commit checks..."
 echo ""
 
-# Lint API Server
-echo "🔧 Linting API Server..."
-cd apps/api-server
-npm run lint
+npx lint-staged
+
 if [ $? -ne 0 ]; then
-  echo "❌ API Server lint failed! Please fix the errors above."
+  echo "❌ Linting failed! Please fix the errors above."
   exit 1
 fi
-echo "✅ API Server lint passed!"
 
-# Lint Web Admin
-echo "🔧 Linting Web Admin..."
-cd ../lumpiah-web-admin
-npm run lint
-if [ $? -ne 0 ]; then
-  echo "❌ Web Admin lint failed! Please fix the errors above."
-  exit 1
-fi
-echo "✅ Web Admin lint passed!"
-
-echo ""
-echo "🎉 All pre-commit checks passed!"
+echo "✅ All checks passed!"

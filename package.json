@@ -15,6 +15,15 @@
     "check:all": "npm run lint:all && npm run build:all"
   },
   "devDependencies": {
-    "husky": "^9.1.7"
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7"
+  },
+  "lint-staged": {
+    "apps/api-server/**/*.{ts,js}": [
+      "eslint --config apps/api-server/eslint.config.mjs --fix"
+    ],
+    "apps/lumpiah-web-admin/**/*.{ts,tsx,js,jsx}": [
+      "eslint --config apps/lumpiah-web-admin/eslint.config.mjs --fix"
+    ]
   }
 }
