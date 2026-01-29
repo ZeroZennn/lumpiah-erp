@@ -20,10 +20,13 @@
   },
   "lint-staged": {
     "apps/api-server/**/*.{ts,js}": [
-      "eslint --config apps/api-server/eslint.config.mjs --fix"
+      "npx eslint --config apps/api-server/eslint.config.mjs --fix"
     ],
     "apps/lumpiah-web-admin/**/*.{ts,tsx,js,jsx}": [
-      "eslint --config apps/lumpiah-web-admin/eslint.config.mjs --fix"
+      "npx eslint --config apps/lumpiah-web-admin/eslint.config.mjs --fix"
     ]
+  },
+  "dependencies": {
+    "sonner": "^2.0.7"
   }
 }

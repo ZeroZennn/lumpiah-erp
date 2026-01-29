@@ -10,6 +10,9 @@ export interface Branch {
   isActive: boolean;
   createdAt: string;
   receiptFooter?: string;
+  _count?: {
+    users: number;
+  };
 }
 
 export interface CreateBranchRequest {

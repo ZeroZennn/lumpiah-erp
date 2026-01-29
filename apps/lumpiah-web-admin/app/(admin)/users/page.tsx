@@ -3,8 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Plus, MoreHorizontal, Pencil, Shield, Key, History } from "lucide-react";
-import { users, roles, formatDateTime } from "@/features/users/data/users.dummy";
-import { branches } from "@/features/branches/data/branches.dummy";
 import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
 import { Switch } from "@/shared/components/ui/switch";
@@ -22,7 +20,6 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/shared/components/ui/dropdown-menu";
 import {
@@ -32,26 +29,93 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/shared/components/ui/select";
+import { useUsers, useRoles, useCreateUser, useUpdateUser } from "@/features/users/api/use-users";
+import { useBranches } from "@/features/branches/api/use-branches";
+import { UserDialog, type UserFormValues } from "@/features/users/components/UserDialog";
+import { notify } from "@/shared/lib/notify";
+import { format } from "date-fns";
+import { id as localeId } from "date-fns/locale";
+import { User } from "@/features/users/api/users.types";
 
 export default function UsersPage() {
-    const [userList, setUserList] = useState(users);
+    const { data: users = [], isLoading: usersLoading } = useUsers();
+    const { data: roles = [], isLoading: rolesLoading } = useRoles();
+    const { data: branches = [], isLoading: branchesLoading } = useBranches();
+
+    const createUserMutation = useCreateUser();
+    const updateUserMutation = useUpdateUser();
+
     const [searchQuery, setSearchQuery] = useState("");
     const [roleFilter, setRoleFilter] = useState<string>("all");
     const [branchFilter, setBranchFilter] = useState<string>("all");
 
-    const activeBranches = branches.filter((b) => b.isActive);
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [selectedUser, setSelectedUser] = useState<User | undefined>();
 
-    const handleToggleActive = (id: number) => {
-        setUserList((prev) =>
-            prev.map((user) =>
-                user.id === id ? { ...user, isActive: !user.isActive } : user
-            )
+    const handleOpenCreate = () => {
+        setSelectedUser(undefined);
+        setIsDialogOpen(true);
+    };
+
+    const handleOpenEdit = (user: User) => {
+        setSelectedUser(user);
+        setIsDialogOpen(true);
+    };
+
+    const handleFormSubmit = (values: UserFormValues) => {
+        try {
+            const payload: import("@/features/users/api/users.types").UpdateUserRequest = {
+                email: values.email,
+                fullname: values.fullname,
+                roleId: Number(values.roleId),
+                phoneNumber: values.phoneNumber,
+                isActive: values.isActive,
+            };
+
+            payload.branchId = values.branchId === "none" ? null : Number(values.branchId);
+
+            if (selectedUser) {
+                // Remove password if empty for edit
+                if (values.password) {
+                    payload.password = values.password;
+                }
+
+                updateUserMutation.mutate({ id: selectedUser.id, data: payload }, {
+                    onSuccess: () => {
+                        notify.success("User berhasil diperbarui");
+                        setIsDialogOpen(false);
+                    },
+                    onError: () => notify.error("Gagal memperbarui user")
+                });
+            } else {
+                payload.password = values.password;
+                createUserMutation.mutate(payload as import("@/features/users/api/users.types").CreateUserRequest, {
+                    onSuccess: () => {
+                        notify.success("User berhasil ditambahkan");
+                        setIsDialogOpen(false);
+                    },
+                    onError: () => notify.error("Gagal menambahkan user")
+                });
+            }
+        } catch {
+            notify.error("Terjadi kesalahan sistem");
+        }
+    };
+
+    const handleToggleStatus = (user: User) => {
+        const newStatus = !user.isActive;
+        updateUserMutation.mutate(
+            { id: user.id, data: { isActive: newStatus } },
+            {
+                onSuccess: () => notify.success(`User ${newStatus ? "diaktifkan" : "dinonaktifkan"}`),
+                onError: () => notify.error("Gagal mengubah status user")
+            }
         );
     };
 
-    const filteredUsers = userList.filter((user) => {
+    const filteredUsers = users.filter((user) => {
         const matchesSearch =
-            user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            user.fullname.toLowerCase().includes(searchQuery.toLowerCase()) ||
             user.email.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesRole = roleFilter === "all" || user.roleId === Number(roleFilter);
         const matchesBranch =
@@ -60,6 +124,10 @@ export default function UsersPage() {
             user.branchId === Number(branchFilter);
         return matchesSearch && matchesRole && matchesBranch;
     });
+
+    if (usersLoading || rolesLoading || branchesLoading) {
+        return <div className="p-8 text-center">Loading users...</div>;
+    }
 
     return (
         <div className="space-y-6">
@@ -78,7 +146,7 @@ export default function UsersPage() {
                             Audit Log
                         </Link>
                     </Button>
-                    <Button className="gap-2">
+                    <Button className="gap-2" onClick={handleOpenCreate}>
                         <Plus className="h-4 w-4" />
                         Tambah User
                     </Button>
@@ -89,14 +157,14 @@ export default function UsersPage() {
             <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                     <CardContent className="pt-6">
-                        <div className="text-2xl font-bold">{userList.length}</div>
+                        <div className="text-2xl font-bold">{users.length}</div>
                         <p className="text-xs text-muted-foreground">Total User</p>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="pt-6">
                         <div className="text-2xl font-bold text-emerald-600">
-                            {userList.filter((u) => u.isActive).length}
+                            {users.filter((u) => u.isActive).length}
                         </div>
                         <p className="text-xs text-muted-foreground">User Aktif</p>
                     </CardContent>
@@ -104,7 +172,7 @@ export default function UsersPage() {
                 <Card>
                     <CardContent className="pt-6">
                         <div className="text-2xl font-bold text-orange-600">
-                            {userList.filter((u) => !u.isActive).length}
+                            {users.filter((u) => !u.isActive).length}
                         </div>
                         <p className="text-xs text-muted-foreground">User Nonaktif</p>
                     </CardContent>
@@ -150,8 +218,8 @@ export default function UsersPage() {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">Semua Cabang</SelectItem>
-                                <SelectItem value="none">Tanpa Cabang</SelectItem>
-                                {activeBranches.map((b) => (
+                                <SelectItem value="none">Pusat / Owner</SelectItem>
+                                {branches.filter(b => b.isActive).map((b) => (
                                     <SelectItem key={b.id} value={String(b.id)}>
                                         {b.name}
                                     </SelectItem>
@@ -175,7 +243,7 @@ export default function UsersPage() {
                                 <TableHead>Email</TableHead>
                                 <TableHead>Cabang</TableHead>
                                 <TableHead>Role</TableHead>
-                                <TableHead>Login Terakhir</TableHead>
+                                <TableHead>Dibuat Pada</TableHead>
                                 <TableHead className="text-center">Status</TableHead>
                                 <TableHead className="w-[50px]"></TableHead>
                             </TableRow>
@@ -190,33 +258,31 @@ export default function UsersPage() {
                             ) : (
                                 filteredUsers.map((user) => (
                                     <TableRow key={user.id}>
-                                        <TableCell className="font-medium">{user.name}</TableCell>
+                                        <TableCell className="font-medium">{user.fullname}</TableCell>
                                         <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                                        <TableCell>{user.branchName || "-"}</TableCell>
+                                        <TableCell>{user.branchName || "Pusat"}</TableCell>
                                         <TableCell>
                                             <Badge
                                                 variant="outline"
                                                 className={
-                                                    user.roleName === "Superadmin"
-                                                        ? "border-primary text-primary"
-                                                        : user.roleName === "Owner"
-                                                            ? "border-amber-500 text-amber-600"
-                                                            : ""
+                                                    user.role?.name === "Owner" || user.role?.name === "Admin"
+                                                        ? "border-amber-500 text-amber-600 font-semibold"
+                                                        : ""
                                                 }
                                             >
                                                 <Shield className="mr-1 h-3 w-3" />
-                                                {user.roleName}
+                                                {user.role?.name || "Pegawai"}
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="text-sm text-muted-foreground">
-                                            {user.lastLogin ? formatDateTime(user.lastLogin) : "-"}
+                                            {user.createdAt ? format(new Date(user.createdAt), "dd MMM yyyy", { locale: localeId }) : "-"}
                                         </TableCell>
                                         <TableCell className="text-center">
                                             <div className="flex items-center justify-center gap-2">
                                                 <Switch
                                                     checked={user.isActive}
-                                                    onCheckedChange={() => handleToggleActive(user.id)}
-                                                    disabled={user.roleId === 1} // Cannot disable superadmin
+                                                    onCheckedChange={() => handleToggleStatus(user)}
+                                                    disabled={updateUserMutation.isPending}
                                                 />
                                                 <Badge variant={user.isActive ? "default" : "secondary"}>
                                                     {user.isActive ? "Aktif" : "Nonaktif"}
@@ -231,18 +297,13 @@ export default function UsersPage() {
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleOpenEdit(user)}>
                                                         <Pencil className="mr-2 h-4 w-4" />
                                                         Edit User
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem>
-                                                        <Shield className="mr-2 h-4 w-4" />
-                                                        Ubah Role
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem>
+                                                    <DropdownMenuItem onClick={() => handleOpenEdit(user)}>
                                                         <Key className="mr-2 h-4 w-4" />
-                                                        Reset Password
+                                                        Ganti Password
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
@@ -254,6 +315,16 @@ export default function UsersPage() {
                     </Table>
                 </CardContent>
             </Card>
+
+            <UserDialog
+                open={isDialogOpen}
+                onOpenChange={setIsDialogOpen}
+                user={selectedUser}
+                roles={roles}
+                branches={branches}
+                onSubmit={handleFormSubmit}
+                isPending={createUserMutation.isPending || updateUserMutation.isPending}
+            />
         </div>
     );
 }
