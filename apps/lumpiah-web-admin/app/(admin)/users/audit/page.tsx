@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Database, Filter } from "lucide-react";
-import { auditLogs, formatDateTime, getActionColor } from "@/features/users/data/users.dummy";
+import { auditLogs, formatDateTime, getActionColor } from "@/features/users/data/user.dummy";
 import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
 

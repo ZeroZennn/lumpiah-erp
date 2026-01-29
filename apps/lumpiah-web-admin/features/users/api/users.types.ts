@@ -14,12 +14,12 @@ export interface User {
   branchId: number | null;
   roleId: number;
   email: string;
-  name: string;
+  fullname: string;
+  phoneNumber?: string;
   isActive: boolean;
   createdAt: string;
-  lastLogin: string | null;
   branchName?: string;
-  roleName?: string;
+  role?: Role;
 }
 
 export interface AuditLog {
@@ -37,17 +37,20 @@ export interface AuditLog {
 export interface CreateUserRequest {
   email: string;
   password: string;
-  name: string;
+  fullname: string;
   branchId?: number;
   roleId: number;
+  isActive?: boolean;
 }
 
 export interface UpdateUserRequest {
   email?: string;
-  name?: string;
-  branchId?: number;
+  fullname?: string;
+  branchId?: number | null;
   roleId?: number;
   isActive?: boolean;
+  phoneNumber?: string;
+  password?: string;
 }
 
 // Permission enum for role-based access

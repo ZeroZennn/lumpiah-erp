@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Plus, MoreHorizontal, Pencil, Eye, MapPin, Users } from "lucide-react";
-import { branches, branchStats } from "@/features/branches/data/branches.dummy";
 import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
 import { Switch } from "@/shared/components/ui/switch";
@@ -22,29 +20,38 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/shared/components/ui/dropdown-menu";
+import { useBranches, useUpdateBranchStatus } from "@/features/branches/api/use-branches";
+import { notify } from "@/shared/lib/notify";
 
-function formatCurrency(value: number): string {
-    if (value >= 1000000) {
-        return `Rp ${(value / 1000000).toFixed(1)} Jt`;
-    }
-    if (value >= 1000) {
-        return `Rp ${(value / 1000).toFixed(0)} Rb`;
-    }
-    return `Rp ${value}`;
-}
 
 export default function BranchesPage() {
-    const [branchList, setBranchList] = useState(branches);
+    const { data: branchList, isLoading, isError } = useBranches();
+    const updateStatusMutation = useUpdateBranchStatus();
 
-    const handleToggleActive = (id: number) => {
-        setBranchList((prev) =>
-            prev.map((branch) =>
-                branch.id === id ? { ...branch, isActive: !branch.isActive } : branch
-            )
+    const handleToggleActive = (id: number, currentStatus: boolean) => {
+        updateStatusMutation.mutate(
+            { id, isActive: !currentStatus },
+            {
+                onSuccess: () => {
+                    notify.success(`Cabang ${!currentStatus ? "diaktifkan" : "dinonaktifkan"}`);
+                },
+                onError: (error) => {
+                    console.error("Failed to update status", error);
+                    notify.error("Gagal mengubah status cabang");
+                }
+            }
         );
     };
 
-    const stats = branchStats;
+    if (isLoading) {
+        return <div className="p-8 text-center">Loading branches...</div>;
+    }
+
+    if (isError) {
+        return <div className="p-8 text-center text-red-500">Failed to load branches.</div>;
+    }
+
+    const branches = branchList || [];
 
     return (
         <div className="space-y-6">
@@ -56,24 +63,26 @@ export default function BranchesPage() {
                         Kelola cabang dan konfigurasi struk
                     </p>
                 </div>
-                <Button className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    Tambah Cabang
+                <Button className="gap-2" asChild>
+                    <Link href="/branches/new">
+                        <Plus className="h-4 w-4" />
+                        Tambah Cabang
+                    </Link>
                 </Button>
             </div>
 
-            {/* Stats Cards */}
+            {/* Stats Cards - Placeholder for now as API doesn't return stats */}
             <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                     <CardContent className="pt-6">
-                        <div className="text-2xl font-bold">{branchList.length}</div>
+                        <div className="text-2xl font-bold">{branches.length}</div>
                         <p className="text-xs text-muted-foreground">Total Cabang</p>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="pt-6">
                         <div className="text-2xl font-bold text-emerald-600">
-                            {branchList.filter((b) => b.isActive).length}
+                            {branches.filter((b) => b.isActive).length}
                         </div>
                         <p className="text-xs text-muted-foreground">Cabang Aktif</p>
                     </CardContent>
@@ -81,7 +90,7 @@ export default function BranchesPage() {
                 <Card>
                     <CardContent className="pt-6">
                         <div className="text-2xl font-bold text-orange-600">
-                            {branchList.filter((b) => !b.isActive).length}
+                            {branches.filter((b) => !b.isActive).length}
                         </div>
                         <p className="text-xs text-muted-foreground">Cabang Nonaktif</p>
                     </CardContent>
@@ -89,7 +98,7 @@ export default function BranchesPage() {
                 <Card>
                     <CardContent className="pt-6">
                         <div className="text-2xl font-bold">
-                            {stats.reduce((sum, s) => sum + s.employeeCount, 0)}
+                            -
                         </div>
                         <p className="text-xs text-muted-foreground">Total Pegawai</p>
                     </CardContent>
@@ -114,8 +123,7 @@ export default function BranchesPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {branchList.map((branch) => {
-                                const stat = stats.find((s) => s.id === branch.id);
+                            {branches.map((branch) => {
                                 return (
                                     <TableRow key={branch.id}>
                                         <TableCell>
@@ -130,17 +138,18 @@ export default function BranchesPage() {
                                         <TableCell className="text-center">
                                             <div className="flex items-center justify-center gap-1.5">
                                                 <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                                                {stat?.employeeCount || 0}
+                                                {branch._count?.users ?? 0}
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-right font-medium">
-                                            {formatCurrency(stat?.todayRevenue || 0)}
+                                            -
                                         </TableCell>
                                         <TableCell className="text-center">
                                             <div className="flex items-center justify-center gap-2">
                                                 <Switch
                                                     checked={branch.isActive}
-                                                    onCheckedChange={() => handleToggleActive(branch.id)}
+                                                    onCheckedChange={() => handleToggleActive(branch.id, branch.isActive)}
+                                                    disabled={updateStatusMutation.isPending}
                                                 />
                                                 <Badge
                                                     variant={branch.isActive ? "default" : "secondary"}
