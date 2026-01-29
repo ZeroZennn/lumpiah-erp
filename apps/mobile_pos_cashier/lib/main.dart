@@ -3,14 +3,21 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
+// Core
+import 'package:mobile_pos_cashier/core/theme/app_theme.dart';
+
+// Auth
+import 'package:mobile_pos_cashier/features/auth/services/auth_service.dart';
+import 'package:mobile_pos_cashier/features/auth/screens/login_screen.dart';
+
+// POS
+import 'package:mobile_pos_cashier/features/pos/screens/pos_screen.dart';
+import 'package:mobile_pos_cashier/features/pos/repositories/pos_repository.dart';
+import 'package:mobile_pos_cashier/features/pos/bloc/cart_cubit.dart';
+
 // Local DB Entities
 import 'package:mobile_pos_cashier/local_db/entities/local_product.dart';
 import 'package:mobile_pos_cashier/local_db/entities/local_transaction.dart';
-
-// Features
-import 'package:mobile_pos_cashier/features/pos/repositories/pos_repository.dart';
-import 'package:mobile_pos_cashier/features/pos/bloc/cart_cubit.dart';
-import 'package:mobile_pos_cashier/features/pos/screens/pos_screen.dart';
 
 void main() async {
   // Ensure Flutter bindings are initialized
@@ -53,83 +60,28 @@ class MyApp extends StatelessWidget {
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
           title: 'Lumpia POS',
-          theme: ThemeData(
-            useMaterial3: true,
-            // Color Scheme with Warm Yellow palette
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFFFFC107),
-              primary: const Color(0xFFFFB300),
-              surface: Colors.white,
-              onPrimary: Colors.white,
-              onSurface: const Color(0xFF2D2D2D),
-            ),
-            // Off-White background for reduced eye strain
-            scaffoldBackgroundColor: const Color(0xFFF5F5F5),
-            // AppBar Theme: White background, no elevation, dark text
-            appBarTheme: const AppBarTheme(
-              backgroundColor: Colors.white,
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              iconTheme: IconThemeData(color: Color(0xFF2D2D2D)),
-              titleTextStyle: TextStyle(
-                color: Color(0xFF2D2D2D),
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            // Elevated Button Theme: Warm Yellow with White text
-            elevatedButtonTheme: ElevatedButtonThemeData(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFFB300),
-                foregroundColor: Colors.white,
-                elevation: 2,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 14,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            // Card Theme: White with subtle shadow
-            cardTheme: CardThemeData(
-              color: Colors.white,
-              elevation: 2,
-              shadowColor: Colors.black.withAlpha(25),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            // Text Theme: Dark Grey instead of pure black
-            textTheme: const TextTheme(
-              headlineLarge: TextStyle(
-                color: Color(0xFF2D2D2D),
-                fontWeight: FontWeight.bold,
-              ),
-              headlineMedium: TextStyle(
-                color: Color(0xFF2D2D2D),
-                fontWeight: FontWeight.bold,
-              ),
-              headlineSmall: TextStyle(
-                color: Color(0xFF2D2D2D),
-                fontWeight: FontWeight.w600,
-              ),
-              bodyLarge: TextStyle(color: Color(0xFF2D2D2D)),
-              bodyMedium: TextStyle(color: Color(0xFF2D2D2D)),
-              bodySmall: TextStyle(color: Color(0xFF5A5A5A)),
-            ),
-            // Divider Theme
-            dividerTheme: const DividerThemeData(
-              color: Color(0xFFE0E0E0),
-              thickness: 1,
-            ),
+          theme: AppTheme.lightTheme,
+          home: FutureBuilder<String?>(
+            future: AuthService().getToken(),
+            builder: (context, snapshot) {
+              // Waiting state
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              // Check if token exists
+              final token = snapshot.data;
+              if (token != null && token.isNotEmpty) {
+                // Token exists - show PosScreen
+                return const PosScreen();
+              } else {
+                // No token - show LoginScreen
+                return const LoginScreen();
+              }
+            },
           ),
-          home: const PosScreen(),
         ),
       ),
     );
