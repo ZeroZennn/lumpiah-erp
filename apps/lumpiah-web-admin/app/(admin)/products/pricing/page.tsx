@@ -1,16 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, Save, Building2, Search, Package } from "lucide-react";
-import {
-    products,
-    categories,
-    branchProductPrices,
-    priceAuditLogs,
-    formatCurrency,
-} from "@/features/products/data/products.dummy";
-import { branches } from "@/features/branches/data/branches.dummy";
+import { ArrowLeft, Save, Building2, Search, Package, Loader2 } from "lucide-react";
+import { formatCurrency } from "@/shared/lib/format";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Label } from "@/shared/components/ui/label";
@@ -34,28 +27,104 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui
 import { Badge } from "@/shared/components/ui/badge";
 import { ScrollArea } from "@/shared/components/ui/scroll-area";
 import { cn } from "@/shared/lib/utils";
+import { useProducts, useUpdateProductPrice, useProductHistory } from "@/features/products/api/use-products";
+import { useDebounce } from "@/shared/hooks/use-debounce";
+import { useCategories } from "@/features/products/api/use-categories";
+import { useBranches } from "@/features/branches/api/use-branches";
+import { toast } from "sonner";
+import { ProductListItem } from "@/features/products/api/products.types";
+
+interface PendingChange {
+    branchId: number;
+    productId: number;
+    price: number;
+}
 
 export default function PricingPage() {
-    const [selectedProductId, setSelectedProductId] = useState<number | null>(products[0]?.id || null);
+    const { data: productsData, isLoading: isLoadingProducts } = useProducts();
+    const { data: categories, isLoading: isLoadingCategories } = useCategories();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: branches, isLoading: isLoadingBranches } = useBranches() as any;
+    const updateProductPrice = useUpdateProductPrice();
+
+    const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [categoryFilter, setCategoryFilter] = useState<string>("all");
+    const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+    const [isSaving, setIsSaving] = useState(false);
 
-    const product = selectedProductId ? products.find((p) => p.id === selectedProductId) : null;
-    const productPrices = selectedProductId
-        ? branchProductPrices.filter((p) => p.productId === selectedProductId)
-        : [];
-    const auditLogs = selectedProductId
-        ? priceAuditLogs.filter((l) => l.productId === selectedProductId)
-        : [];
+    // Set default selected product when data loads
+    useEffect(() => {
+        if (productsData && productsData.length > 0 && !selectedProductId) {
+            setSelectedProductId(productsData[0].id);
+        }
+    }, [productsData, selectedProductId]);
 
-    const activeBranches = branches.filter((b) => b.isActive);
+    const product = selectedProductId ? productsData?.find((p) => p.id === selectedProductId) : null;
+
+    // Explicitly define type for activeBranches
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activeBranches = branches?.filter((b: any) => b.isActive) || [];
 
     // Filter products
-    const filteredProducts = products.filter((p) => {
+    const filteredProducts = productsData?.filter((p) => {
         const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesCategory = categoryFilter === "all" || p.categoryId === Number(categoryFilter);
+        const matchesCategory = categoryFilter === "all" || String(p.categoryId) === categoryFilter;
         return matchesSearch && matchesCategory && p.isActive;
-    });
+    }) || [];
+
+    const handlePriceChange = (branchId: number, newPrice: number) => {
+        if (!selectedProductId) return;
+
+        setPendingChanges(prev => {
+            // Remove existing change for this branch/product if exists
+            const filtered = prev.filter(c => !(c.branchId === branchId && c.productId === selectedProductId));
+            return [...filtered, { branchId, productId: selectedProductId, price: newPrice }];
+        });
+    };
+
+    const handleSaveChanges = async () => {
+        if (pendingChanges.length === 0) return;
+
+        setIsSaving(true);
+        try {
+            await Promise.all(pendingChanges.map(change =>
+                updateProductPrice.mutateAsync({
+                    id: change.productId,
+                    data: {
+                        branchId: change.branchId,
+                        price: change.price,
+                    }
+                })
+            ));
+
+            toast.success(`Successfully updated ${pendingChanges.length} prices`);
+            setPendingChanges([]);
+        } catch (error) {
+            console.error(error);
+            toast.error("Failed to save some changes");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const getDisplayPrice = (p: ProductListItem, branchId: number) => {
+        // Check pending changes first
+        const pending = pendingChanges.find(c => c.productId === p.id && c.branchId === branchId);
+        if (pending) return pending.price;
+
+        // Then check existing overrides
+        const override = p.branchProductPrices?.find(bp => bp.branchId === branchId);
+        return override ? override.price : undefined;
+    };
+
+    if (isLoadingProducts || isLoadingCategories || isLoadingBranches) {
+        return (
+            <div className="flex h-screen items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">
@@ -72,16 +141,18 @@ export default function PricingPage() {
                         Atur harga khusus per cabang untuk setiap produk
                     </p>
                 </div>
-                <Button className="gap-2">
-                    <Save className="h-4 w-4" />
-                    Simpan Perubahan
-                </Button>
+                {pendingChanges.length > 0 && (
+                    <Button className="gap-2" onClick={handleSaveChanges} disabled={isSaving}>
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                        Simpan ({pendingChanges.length}) Perubahan
+                    </Button>
+                )}
             </div>
 
             {/* Master-Detail Layout */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* Product List (Master) */}
-                <Card className="lg:col-span-4">
+                <Card className="lg:col-span-4 h-[calc(100vh-12rem)]">
                     <CardHeader className="pb-3">
                         <CardTitle className="text-base flex items-center gap-2">
                             <Package className="h-4 w-4" />
@@ -91,7 +162,7 @@ export default function PricingPage() {
                             {filteredProducts.length} produk ditemukan
                         </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-3">
+                    <CardContent className="space-y-3 h-full flex flex-col">
                         {/* Search & Filter */}
                         <div className="flex gap-2">
                             <div className="relative flex-1">
@@ -109,7 +180,7 @@ export default function PricingPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     <SelectItem value="all">Semua</SelectItem>
-                                    {categories.map((cat) => (
+                                    {categories?.map((cat) => (
                                         <SelectItem key={cat.id} value={String(cat.id)}>
                                             {cat.name}
                                         </SelectItem>
@@ -119,11 +190,12 @@ export default function PricingPage() {
                         </div>
 
                         {/* Product List */}
-                        <ScrollArea className="h-[500px]">
-                            <div className="space-y-1 pr-3">
+                        <ScrollArea className="flex-1 -mx-4 px-4">
+                            <div className="space-y-1 pr-3 pb-4">
                                 {filteredProducts.map((p) => {
-                                    const hasOverride = branchProductPrices.some((bp) => bp.productId === p.id);
+                                    const hasOverride = p.branchProductPrices && p.branchProductPrices.length > 0;
                                     const isSelected = selectedProductId === p.id;
+                                    const hasPending = pendingChanges.some(c => c.productId === p.id);
 
                                     return (
                                         <button
@@ -146,18 +218,25 @@ export default function PricingPage() {
                                                         {p.name}
                                                     </p>
                                                     <p className="text-xs text-muted-foreground mt-0.5">
-                                                        {categories.find((c) => c.id === p.categoryId)?.name}
+                                                        {p.category}
                                                     </p>
                                                 </div>
                                                 <div className="text-right shrink-0">
                                                     <p className="font-semibold text-sm">
                                                         {formatCurrency(p.basePrice)}
                                                     </p>
-                                                    {hasOverride && (
-                                                        <Badge variant="secondary" className="text-[10px] mt-1">
-                                                            Override
-                                                        </Badge>
-                                                    )}
+                                                    <div className="flex justify-end gap-1 mt-1">
+                                                        {hasOverride && (
+                                                            <Badge variant="secondary" className="text-[10px] px-1 h-4">
+                                                                Override
+                                                            </Badge>
+                                                        )}
+                                                        {hasPending && (
+                                                            <Badge className="text-[10px] px-1 h-4 bg-yellow-500 hover:bg-yellow-600">
+                                                                Unsaved
+                                                            </Badge>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </button>
@@ -182,7 +261,7 @@ export default function PricingPage() {
                                 <div>
                                     <h2 className="text-xl font-semibold">{product.name}</h2>
                                     <p className="text-sm text-muted-foreground">
-                                        {categories.find((c) => c.id === product.categoryId)?.name} • {product.unit}
+                                        {product.category} • {product.unit}
                                     </p>
                                 </div>
                                 <TabsList>
@@ -206,8 +285,9 @@ export default function PricingPage() {
                                                 <Label className="text-xs">Harga Dasar</Label>
                                                 <Input
                                                     type="number"
-                                                    defaultValue={product.basePrice}
-                                                    className="text-lg font-semibold h-11"
+                                                    disabled
+                                                    value={product.basePrice}
+                                                    className="text-lg font-semibold h-11 bg-muted"
                                                 />
                                             </div>
                                             <div className="space-y-1.5">
@@ -242,9 +322,13 @@ export default function PricingPage() {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {activeBranches.map((branch) => {
-                                                    const override = productPrices.find((p) => p.branchId === branch.id);
-                                                    const diff = override ? override.price - product.basePrice : 0;
+                                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                                {activeBranches.map((branch: any) => {
+                                                    const displayPrice = getDisplayPrice(product, branch.id);
+                                                    const isOverridden = displayPrice !== undefined;
+                                                    const currentPrice = isOverridden ? displayPrice : product.basePrice;
+                                                    const diff = currentPrice - product.basePrice;
+                                                    const isPending = pendingChanges.some(c => c.productId === product.id && c.branchId === branch.id);
 
                                                     return (
                                                         <TableRow key={branch.id}>
@@ -253,15 +337,27 @@ export default function PricingPage() {
                                                                 {formatCurrency(product.basePrice)}
                                                             </TableCell>
                                                             <TableCell className="text-right">
-                                                                <Input
-                                                                    type="number"
-                                                                    placeholder="—"
-                                                                    defaultValue={override?.price || ""}
-                                                                    className="w-28 h-8 text-right ml-auto"
-                                                                />
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    {isPending && <span className="text-[10px] text-yellow-600 font-medium">Changed</span>}
+                                                                    <Input
+                                                                        type="number"
+                                                                        placeholder="—"
+                                                                        value={displayPrice || ""}
+                                                                        onChange={(e) => {
+                                                                            const val = e.target.valueAsNumber;
+                                                                            if (!isNaN(val)) {
+                                                                                handlePriceChange(branch.id, val);
+                                                                            }
+                                                                        }}
+                                                                        className={cn(
+                                                                            "w-28 h-8 text-right ml-auto",
+                                                                            isPending && "border-yellow-500 bg-yellow-50"
+                                                                        )}
+                                                                    />
+                                                                </div>
                                                             </TableCell>
                                                             <TableCell className="text-right">
-                                                                {override ? (
+                                                                {isOverridden ? (
                                                                     <Badge variant={diff > 0 ? "default" : diff < 0 ? "secondary" : "outline"}>
                                                                         {diff > 0 ? "+" : ""}{formatCurrency(diff)}
                                                                     </Badge>
@@ -280,62 +376,8 @@ export default function PricingPage() {
 
                             <TabsContent value="audit" className="mt-4">
                                 <Card>
-                                    <CardHeader className="pb-3">
-                                        <CardTitle className="text-base">Riwayat Perubahan Harga</CardTitle>
-                                        <CardDescription>
-                                            Log audit untuk {product.name}
-                                        </CardDescription>
-                                    </CardHeader>
-                                    <CardContent>
-                                        <Table>
-                                            <TableHeader>
-                                                <TableRow>
-                                                    <TableHead>Tanggal</TableHead>
-                                                    <TableHead>Cabang</TableHead>
-                                                    <TableHead className="text-right">Lama</TableHead>
-                                                    <TableHead className="text-right">Baru</TableHead>
-                                                    <TableHead>Oleh</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {auditLogs.length === 0 ? (
-                                                    <TableRow>
-                                                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                                                            Belum ada riwayat perubahan
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ) : (
-                                                    auditLogs.map((log) => (
-                                                        <TableRow key={log.id}>
-                                                            <TableCell className="text-sm">
-                                                                {new Date(log.changedAt).toLocaleDateString("id-ID", {
-                                                                    day: "numeric",
-                                                                    month: "short",
-                                                                    hour: "2-digit",
-                                                                    minute: "2-digit",
-                                                                })}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                {log.branchName || (
-                                                                    <span className="text-muted-foreground">Dasar</span>
-                                                                )}
-                                                            </TableCell>
-                                                            <TableCell className="text-right text-muted-foreground">
-                                                                {formatCurrency(log.oldPrice)}
-                                                            </TableCell>
-                                                            <TableCell className="text-right font-medium">
-                                                                {formatCurrency(log.newPrice)}
-                                                            </TableCell>
-                                                            <TableCell>
-                                                                <Badge variant="outline" className="text-xs">
-                                                                    {log.changedBy}
-                                                                </Badge>
-                                                            </TableCell>
-                                                        </TableRow>
-                                                    ))
-                                                )}
-                                            </TableBody>
-                                        </Table>
+                                    <CardContent className="p-0">
+                                        <HistoryList productId={product.id} />
                                     </CardContent>
                                 </Card>
                             </TabsContent>
@@ -352,6 +394,53 @@ export default function PricingPage() {
                     )}
                 </div>
             </div>
+        </div>
+    );
+}
+
+function HistoryList({ productId }: { productId: number }) {
+    const debouncedProductId = useDebounce(productId, 500);
+    const { data: history, isLoading, isFetching } = useProductHistory(debouncedProductId);
+
+    // Show loading if debounce is pending (ids don't match) or if query is loading
+    const isDebouncing = productId !== debouncedProductId;
+    const isBusy = isDebouncing || isLoading || isFetching;
+
+    if (isBusy) {
+        return (
+            <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center gap-2">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <p>Memuat riwayat...</p>
+            </div>
+        );
+    }
+
+    if (!history || history.length === 0) {
+        return <div className="p-8 text-center text-muted-foreground">Riwayat perubahan harga belum tersedia.</div>;
+    }
+
+    return (
+        <div className="divide-y max-h-[400px] overflow-y-auto">
+            {history.map((item) => (
+                <div key={item.id} className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                    <div>
+                        <p className="text-sm font-medium">{item.branchName}</p>
+                        <p className="text-xs text-muted-foreground">
+                            By {item.user} • {new Date(item.timestamp).toLocaleDateString()} {new Date(item.timestamp).toLocaleTimeString()}
+                        </p>
+                    </div>
+                    <div className="text-right">
+                        <p className="font-medium text-sm">
+                            {formatCurrency(item.price)}
+                        </p>
+                        {item.oldPrice && (
+                            <p className="text-xs text-muted-foreground line-through">
+                                {formatCurrency(item.oldPrice)}
+                            </p>
+                        )}
+                    </div>
+                </div>
+            ))}
         </div>
     );
 }

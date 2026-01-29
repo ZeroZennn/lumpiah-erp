@@ -44,6 +44,8 @@ interface DataTableProps<TData, TValue> {
     data: TData[]
     searchKey?: string
     searchPlaceholder?: string
+    isLoading?: boolean
+    toolbarActions?: React.ReactNode
 }
 
 export function DataTable<TData, TValue>({
@@ -51,6 +53,8 @@ export function DataTable<TData, TValue>({
     data,
     searchKey,
     searchPlaceholder = "Cari data...",
+    isLoading,
+    toolbarActions,
 }: DataTableProps<TData, TValue>) {
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -80,8 +84,8 @@ export function DataTable<TData, TValue>({
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
-                {searchKey && (
-                    <div className="flex items-center py-4">
+                <div className="flex flex-1 items-center space-x-2">
+                    {searchKey && (
                         <Input
                             placeholder={searchPlaceholder}
                             value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
@@ -90,8 +94,9 @@ export function DataTable<TData, TValue>({
                             }
                             className="max-w-sm"
                         />
-                    </div>
-                )}
+                    )}
+                    {toolbarActions}
+                </div>
                 <div className="flex items-center gap-2">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
