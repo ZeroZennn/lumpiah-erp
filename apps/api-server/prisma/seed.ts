@@ -9,21 +9,22 @@ async function main() {
   console.log('🌱 Starting seed...');
 
   // Clear existing data (in reverse order of dependencies)
+  // Note: Skip deletion on fresh database to avoid errors
   console.log('🗑️  Cleaning existing data...');
-  await prisma.auditLog.deleteMany();
-  await prisma.attendance.deleteMany();
-  await prisma.productionRealization.deleteMany();
-  await prisma.productionPlan.deleteMany();
-  await prisma.dssConfig.deleteMany();
-  await prisma.dailyClosing.deleteMany();
-  await prisma.transactionItem.deleteMany();
-  await prisma.transaction.deleteMany();
-  await prisma.branchProductPrice.deleteMany();
-  await prisma.product.deleteMany();
-  await prisma.category.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.branch.deleteMany();
-  await prisma.role.deleteMany();
+  // await prisma.auditLog.deleteMany();
+  // await prisma.attendance.deleteMany();
+  // await prisma.productionRealization.deleteMany();
+  // await prisma.productionPlan.deleteMany();
+  // await prisma.dssConfig.deleteMany();
+  // await prisma.dailyClosing.deleteMany();
+  // await prisma.transactionItem.deleteMany();
+  // await prisma.transaction.deleteMany();
+  // await prisma.branchProductPrice.deleteMany();
+  // await prisma.product.deleteMany();
+  // await prisma.category.deleteMany();
+  // await prisma.user.deleteMany();
+  // await prisma.branch.deleteMany();
+  // await prisma.role.deleteMany();
 
   // 1. Create Roles
   console.log('👥 Creating roles...');
@@ -59,7 +60,9 @@ async function main() {
 
   const userSyauqi = await prisma.user.create({
     data: {
-      username: 'syauqi@lumpiah.com',
+      email: 'syauqi@lumpiah.com',
+      fullname: 'Syauqi Administrator',
+      phoneNumber: '081234567890',
       passwordHash: passwordHash,
       roleId: roleAdmin.id,
       branchId: branch.id,
@@ -69,7 +72,9 @@ async function main() {
 
   const userZikran = await prisma.user.create({
     data: {
-      username: 'zikran@lumpiah.com',
+      email: 'zikran@lumpiah.com',
+      fullname: 'Achmad Zikran',
+      phoneNumber: '089876543210',
       passwordHash: passwordHash,
       roleId: rolePegawai.id,
       branchId: branch.id,
