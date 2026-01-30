@@ -1,5 +1,6 @@
 import { DataTable } from '@/shared/components/ui/data-table';
 import { useProducts } from '../api/use-products';
+import { useCategories } from '../api/use-categories';
 import { useBranches } from '@/features/branches/api/use-branches';
 import { ColumnDef } from '@tanstack/react-table';
 import { ProductListItem } from '../api/products.types';
@@ -24,23 +25,30 @@ import {
 } from '@/shared/components/ui/select';
 import { useState } from 'react';
 import { ProductForm } from './product-form';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/shared/components/ui/dialog';
-import { ProductPriceDialog } from './product-price-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
+
+import { useRouter } from 'next/navigation';
 
 export const ProductList = () => {
+    const router = useRouter();
     const { data: products, isLoading } = useProducts();
+    const { data: categories } = useCategories();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: branches } = useBranches() as any;
     const [editingProduct, setEditingProduct] = useState<ProductListItem | null>(null);
-    const [priceUpdateProduct, setPriceUpdateProduct] = useState<ProductListItem | null>(null);
     const [statusFilter, setStatusFilter] = useState<string>('all');
+    const [categoryFilter, setCategoryFilter] = useState<string>('all');
     const [branchFilter, setBranchFilter] = useState<string>('all');
 
     const filteredProducts = products?.filter((product) => {
-        if (statusFilter === 'all') return true;
-        if (statusFilter === 'active') return product.isActive;
-        if (statusFilter === 'inactive') return !product.isActive;
-        return true;
+        const matchesStatus = statusFilter === 'all' ||
+            (statusFilter === 'active' && product.isActive) ||
+            (statusFilter === 'inactive' && !product.isActive);
+
+        const matchesCategory = categoryFilter === 'all' ||
+            String(product.categoryId) === categoryFilter;
+
+        return matchesStatus && matchesCategory;
     });
 
     const columns: ColumnDef<ProductListItem>[] = [
@@ -112,7 +120,7 @@ export const ProductList = () => {
                                 <Edit className="mr-2 h-4 w-4" />
                                 <span className="ml-2">Edit Details</span>
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setPriceUpdateProduct(product)}>
+                            <DropdownMenuItem onClick={() => router.push(`/products/pricing?productId=${product.id}`)}>
                                 <DollarSign className="mr-2 h-4 w-4" />
                                 <span className="ml-2">Update Branch Prices</span>
                             </DropdownMenuItem>
@@ -143,6 +151,20 @@ export const ProductList = () => {
                             </SelectContent>
                         </Select>
 
+                        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                            <SelectTrigger className="w-[180px]">
+                                <SelectValue placeholder="All Categories" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Categories</SelectItem>
+                                {categories?.map((category) => (
+                                    <SelectItem key={category.id} value={String(category.id)}>
+                                        {category.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+
                         <Select value={branchFilter} onValueChange={setBranchFilter}>
                             <SelectTrigger className="w-[180px]">
                                 <SelectValue placeholder="All Branches" />
@@ -170,23 +192,6 @@ export const ProductList = () => {
                         <ProductForm
                             product={editingProduct}
                             onSuccess={() => setEditingProduct(null)}
-                        />
-                    )}
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={!!priceUpdateProduct} onOpenChange={(open) => !open && setPriceUpdateProduct(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Update Branch Prices</DialogTitle>
-                        <DialogDescription>
-                            Change the price for this product across different branches.
-                        </DialogDescription>
-                    </DialogHeader>
-                    {priceUpdateProduct && (
-                        <ProductPriceDialog
-                            product={priceUpdateProduct}
-                            onSuccess={() => setPriceUpdateProduct(null)}
                         />
                     )}
                 </DialogContent>

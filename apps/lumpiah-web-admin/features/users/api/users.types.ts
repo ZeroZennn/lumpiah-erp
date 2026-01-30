@@ -20,6 +20,11 @@ export interface User {
   createdAt: string;
   branchName?: string;
   role?: Role;
+  branch?: {
+    id: number;
+    name: string;
+    isActive: boolean;
+  };
 }
 
 export interface AuditLog {
