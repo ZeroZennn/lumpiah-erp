@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { Plus, History } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
@@ -12,7 +12,7 @@ import { UserDialog, type UserFormValues } from "@/features/users/components/Use
 import { notify } from "@/shared/lib/notify";
 import { User } from "@/features/users/api/users.types";
 
-export default function UsersPage() {
+function Users() {
     const { data: users = [], isLoading: usersLoading } = useUsers();
     const { data: roles = [], isLoading: rolesLoading } = useRoles();
     const { data: branches = [], isLoading: branchesLoading } = useBranches();
@@ -35,7 +35,7 @@ export default function UsersPage() {
 
     const handleFormSubmit = useCallback((values: UserFormValues) => {
         try {
-            const payload: import("@/features/users/api/users.types").UpdateUserRequest = {
+            const payload: any = {
                 email: values.email,
                 fullname: values.fullname,
                 roleId: Number(values.roleId),
@@ -46,7 +46,6 @@ export default function UsersPage() {
             payload.branchId = values.branchId === "none" ? null : Number(values.branchId);
 
             if (selectedUser) {
-                // Remove password if empty for edit
                 if (values.password) {
                     payload.password = values.password;
                 }
@@ -60,7 +59,7 @@ export default function UsersPage() {
                 });
             } else {
                 payload.password = values.password;
-                createUserMutation.mutate(payload as import("@/features/users/api/users.types").CreateUserRequest, {
+                createUserMutation.mutate(payload, {
                     onSuccess: () => {
                         notify.success("User berhasil ditambahkan");
                         setIsDialogOpen(false);
@@ -85,12 +84,11 @@ export default function UsersPage() {
     }, [updateUserMutation]);
 
     if (usersLoading || rolesLoading || branchesLoading) {
-        return <div className="p-8 text-center">Loading users...</div>;
+        return <div className="p-8 text-center text-slate-500">Loading users...</div>;
     }
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
+        <div className="space-y-6 text-slate-900">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Manajemen User</h1>
@@ -112,7 +110,6 @@ export default function UsersPage() {
                 </div>
             </div>
 
-            {/* Stats */}
             <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                     <CardContent className="pt-6">
@@ -144,7 +141,6 @@ export default function UsersPage() {
                 </Card>
             </div>
 
-            {/* Users Table */}
             <Card>
                 <CardHeader>
                     <CardTitle>Daftar User</CardTitle>
@@ -172,5 +168,13 @@ export default function UsersPage() {
                 isPending={createUserMutation.isPending || updateUserMutation.isPending}
             />
         </div>
+    );
+}
+
+export default function UsersPage() {
+    return (
+        <Suspense fallback={<div className="p-8 text-center text-slate-500">Loading...</div>}>
+            <Users />
+        </Suspense>
     );
 }

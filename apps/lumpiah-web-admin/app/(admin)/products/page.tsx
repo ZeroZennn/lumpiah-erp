@@ -3,12 +3,12 @@
 import { ProductList } from '@/features/products/components/product-list';
 import { Button } from '@/shared/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
 import { ProductForm } from '@/features/products/components/product-form';
 import Link from 'next/link';
 
-export default function ProductsPage() {
+function Products() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   return (
@@ -39,5 +39,13 @@ export default function ProductsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <Products />
+    </Suspense>
   );
 }

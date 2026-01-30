@@ -1,8 +1,9 @@
 "use client";
 
+import { Suspense } from 'react';
 import { TransactionTable } from '@/features/transactions/components/transaction-table';
 
-export default function TransactionsPage() {
+function Transactions() {
     return (
         <div className="p-6 space-y-8 bg-slate-50/50 min-h-screen">
             <div className="flex flex-col gap-2">
@@ -14,5 +15,13 @@ export default function TransactionsPage() {
 
             <TransactionTable />
         </div>
+    );
+}
+
+export default function TransactionsPage() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <Transactions />
+        </Suspense>
     );
 }
