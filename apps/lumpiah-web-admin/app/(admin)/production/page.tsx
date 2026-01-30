@@ -1,12 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Factory, Settings, Building2, Download } from "lucide-react";
-import { productionPlansWithRealization } from "@/features/production/data/production.dummy";
-import { branches } from "@/features/branches/data/branches.dummy";
-import { Button } from "@/shared/components/ui/button";
+import { Factory, Settings, Building2, RefreshCcw } from "lucide-react";
 
+
+import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import {
     Select,
@@ -16,28 +15,101 @@ import {
     SelectValue,
 } from "@/shared/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
-import { DateRangePicker } from "@/shared/components/ui/date-range-picker";
-import { DateRange } from "react-day-picker";
-import { ProductionAnalytics } from "@/features/production/components/production-analytics";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/shared/components/ui/popover";
+import { Calendar } from "@/shared/components/ui/calendar";
+import { cn } from "@/shared/lib/utils";
+import { Calendar as CalendarIcon } from "lucide-react";
+import { format, parseISO, isValid } from "date-fns";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useBranches } from "@/features/branches/api/use-branches";
 
-import { DataTable } from "@/shared/components/ui/data-table";
-import { columns } from "@/features/production/components/columns";
+import { ProductionTable } from "@/features/production/components/production-table";
+import { AccuracyChart } from "@/features/production/components/accuracy-chart";
+import { ProductionGuide } from "@/features/production/components/production-guide";
+import { useProductionPlans, useProductionAccuracy } from "@/features/production/api/use-production";
 
-export default function ProductionPage() {
-    const [selectedBranch, setSelectedBranch] = useState<string>("1");
-    // const [searchQuery, setSearchQuery] = useState(""); // Managed by DataTable
-    const [dateRange, setDateRange] = useState<DateRange | undefined>({
-        from: new Date(),
-        to: new Date(),
-    });
-    // const [currentPage, setCurrentPage] = useState(1); // Managed by DataTable
-    // const [rowsPerPage, setRowsPerPage] = useState(10); // Managed by DataTable
+function Production() {
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
 
-    const activeBranches = branches.filter((b) => b.isActive);
-    const plans = productionPlansWithRealization.filter(
-        (p) => p.branchId === Number(selectedBranch)
+    const { data: branches, isLoading: branchesLoading } = useBranches();
+
+    // Initialize from URL or default
+    const urlBranch = searchParams.get("branchId");
+    const urlDateString = searchParams.get("date");
+    const parsedUrlDate = urlDateString ? parseISO(urlDateString) : null;
+
+    const [selectedBranch, setSelectedBranch] = useState<string>(urlBranch || "");
+    const [date, setDate] = useState<Date>(
+        parsedUrlDate && isValid(parsedUrlDate) ? parsedUrlDate : new Date()
     );
+    const [init, setInit] = useState(false);
 
+    const branchId = parseInt(selectedBranch) || 0;
+
+    // Helper to update URL
+    const updateUrl = useCallback((newBranchId: string, newDate: Date) => {
+        const params = new URLSearchParams(searchParams.toString());
+        if (newBranchId) params.set("branchId", newBranchId);
+        params.set("date", format(newDate, "yyyy-MM-dd"));
+        router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    }, [searchParams, router, pathname]);
+
+    // Set default branch if missing in URL and state
+    useEffect(() => {
+        if (branches && branches.length > 0 && !selectedBranch) {
+            const firstBranchId = String(branches[0].id);
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setSelectedBranch(firstBranchId);
+            updateUrl(firstBranchId, date);
+        }
+    }, [branches, selectedBranch, date, updateUrl]);
+
+    const handleBranchChange = (newBranchId: string) => {
+        setSelectedBranch(newBranchId);
+        updateUrl(newBranchId, date);
+    };
+
+    const handleDateChange = (newDate: Date) => {
+        setDate(newDate);
+        setInit(false); // Reset init on date change
+        updateUrl(selectedBranch, newDate);
+    };
+
+    // Fetch Real Data
+    const {
+        data: plans,
+        isLoading: plansLoading,
+        isFetching,
+        refetch: refetchPlans
+    } = useProductionPlans(branchId, date, init);
+
+    useEffect(() => {
+        if (init && !isFetching) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setInit(false);
+        }
+    }, [init, isFetching]);
+
+    const initializePlans = () => {
+        setInit(true);
+    };
+
+    const {
+        data: accuracyData,
+        isLoading: accuracyLoading,
+        refetch: refetchAccuracy
+    } = useProductionAccuracy(branchId, date);
+
+    const handleRefresh = () => {
+        refetchPlans();
+        refetchAccuracy();
+    };
 
     return (
         <div className="space-y-6">
@@ -46,23 +118,60 @@ export default function ProductionPage() {
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">Produksi & Perencanaan</h1>
                     <p className="text-muted-foreground">
-                        Kelola rencana produksi harian dan monitoring realisasi
+                        Kelola rencana produksi harian dan monitoring realisasi (DSS Enabled)
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                    <Select
+                        value={selectedBranch}
+                        onValueChange={handleBranchChange}
+                        disabled={branchesLoading}
+                    >
                         <SelectTrigger className="w-[200px] h-9">
                             <Building2 className="mr-2 h-4 w-4 text-muted-foreground" />
-                            <SelectValue />
+                            <SelectValue placeholder="Pilih Cabang" />
                         </SelectTrigger>
                         <SelectContent>
-                            {activeBranches.map((b) => (
+                            {branches?.map((b) => (
                                 <SelectItem key={b.id} value={String(b.id)}>
                                     {b.name}
                                 </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
+
+                    {/* Date Picker (Single Date) */}
+                    <div className="w-[240px]">
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant={"outline"}
+                                    className={cn(
+                                        "w-full justify-start text-left font-normal h-9",
+                                        !date && "text-muted-foreground"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {date ? format(date, "PPP") : <span>Pick a date</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                                <Calendar
+                                    mode="single"
+                                    selected={date}
+                                    onSelect={(d) => d && handleDateChange(d)}
+                                    initialFocus
+                                />
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+
+                    <Button variant="outline" size="sm" className="h-9" onClick={handleRefresh}>
+                        <RefreshCcw className="h-4 w-4" />
+                    </Button>
+
+                    <ProductionGuide />
+
                     <Button variant="outline" size="sm" className="h-9" asChild>
                         <Link href="/production/config">
                             <Settings className="mr-2 h-4 w-4" />
@@ -75,45 +184,59 @@ export default function ProductionPage() {
             <Tabs defaultValue="operational" className="space-y-4">
                 <TabsList>
                     <TabsTrigger value="operational">Operasional Harian</TabsTrigger>
-                    <TabsTrigger value="analytics">Analytics & Recap</TabsTrigger>
+                    <TabsTrigger value="analytics">Laporan Akurasi</TabsTrigger>
                 </TabsList>
 
                 {/* OPERATIONAL TAB */}
                 <TabsContent value="operational" className="space-y-4">
-                    {/* Filters */}
-                    <Card>
-                        <CardContent className="p-4 flex flex-col md:flex-row gap-4">
-                            <DateRangePicker date={dateRange} onDateChange={setDateRange} />
-                            <div className="flex gap-2 ml-auto">
-                                <Button variant="secondary">
-                                    <span className="mr-2">Export</span>
-                                    <Download className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-
                     {/* Main Table */}
-                    <Card>
-                        <CardHeader className="pb-3">
-                            <div className="flex items-center justify-between">
-                                <CardTitle className="text-base flex items-center gap-2">
-                                    <Factory className="h-4 w-4" />
-                                    Daftar Rencana Produksi
-                                </CardTitle>
+                    <CardHeader className="pb-3 border-b">
+                        <div className="flex items-center justify-between">
+                            <CardTitle className="text-base flex items-center gap-2">
+                                <Factory className="h-4 w-4" />
+                                Daftar Rencana Produksi - {format(date, "dd MMMM yyyy")}
+                            </CardTitle>
+                            <div className="text-sm text-muted-foreground">
+                                Total SKU: {plans?.length || 0}
                             </div>
-                        </CardHeader>
-                        <CardContent>
-                            <DataTable columns={columns} data={plans} searchKey="productName" searchPlaceholder="Cari produk..." />
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                        <ProductionTable
+                            plans={plans || []}
+                            isLoading={plansLoading || (init && isFetching)}
+                            date={date}
+                            onInitialize={initializePlans}
+                            branchId={branchId}
+                        />
+                    </CardContent>
                 </TabsContent>
 
                 {/* ANALYTICS TAB */}
-                <TabsContent value="analytics">
-                    <ProductionAnalytics plans={plans} />
+                <TabsContent value="analytics" className="space-y-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Laporan Akurasi & Evaluasi</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            {accuracyLoading ? (
+                                <div className="h-64 flex items-center justify-center">Loading Data...</div>
+                            ) : (
+                                <AccuracyChart data={accuracyData || []} />
+                            )}
+                        </CardContent>
+                    </Card>
                 </TabsContent>
             </Tabs>
         </div>
+    );
+}
+
+
+export default function ProductionPage() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <Production />
+        </Suspense>
     );
 }
