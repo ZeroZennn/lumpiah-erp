@@ -1827,16 +1827,76 @@ class _ProductCard extends StatelessWidget {
                                     context.read<CartCubit>().addToCart(
                                       product,
                                     );
+
+                                    // Custom "Add to Cart" Notification
                                     ScaffoldMessenger.of(
                                       context,
                                     ).clearSnackBars();
+                                    final screenWidth = MediaQuery.of(
+                                      context,
+                                    ).size.width;
+                                    final isTablet = screenWidth >= 600;
+
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('${product.name} added'),
-                                        duration: const Duration(
-                                          milliseconds: 500,
+                                        content: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.all(4),
+                                              decoration: const BoxDecoration(
+                                                color: Colors.green,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.check,
+                                                size: 12,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Flexible(
+                                              child: Text(
+                                                '${product.name} (+1)',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 13,
+                                                  color: Colors.white,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        backgroundColor: const Color(
+                                          0xFF323232,
                                         ),
                                         behavior: SnackBarBehavior.floating,
+                                        elevation: 6,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            24,
+                                          ),
+                                        ),
+                                        // Position: Bottom Left on Tablet, Center on Phone
+                                        margin: isTablet
+                                            ? EdgeInsets.only(
+                                                bottom: 24,
+                                                left: 24,
+                                                right:
+                                                    screenWidth -
+                                                    300, // Forces approx 276px width aligned left
+                                              )
+                                            : const EdgeInsets.fromLTRB(
+                                                20,
+                                                0,
+                                                20,
+                                                20,
+                                              ),
+                                        duration: const Duration(
+                                          milliseconds: 1000,
+                                        ),
                                       ),
                                     );
                                   },
@@ -1954,7 +2014,7 @@ class _CartItemTile extends StatelessWidget {
                 icon: Icons.remove,
                 onTap: () {
                   if (item.quantity > 1) {
-                    // TODO: Implement decrease quantity
+                    context.read<CartCubit>().decrementItem(item.product);
                   } else {
                     context.read<CartCubit>().removeFromCart(
                       item.product.serverId,

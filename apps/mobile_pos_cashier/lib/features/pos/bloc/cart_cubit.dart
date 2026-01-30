@@ -103,6 +103,31 @@ class CartCubit extends Cubit<CartState> {
     _calculateTotal();
   }
 
+  /// Decrements the quantity of a product in the cart.
+  /// If quantity > 1, decreases by 1.
+  /// If quantity is 1, removes the item from the cart.
+  void decrementItem(LocalProduct product) {
+    final existingIndex = state.items.indexWhere(
+      (item) => item.product.serverId == product.serverId,
+    );
+
+    if (existingIndex != -1) {
+      final existingItem = state.items[existingIndex];
+      if (existingItem.quantity > 1) {
+        final updatedItems = List<CartItem>.from(state.items);
+        final newQty = existingItem.quantity - 1;
+        updatedItems[existingIndex] = existingItem.copyWith(
+          quantity: newQty,
+          subtotal: product.price * newQty,
+        );
+        emit(state.copyWith(items: updatedItems));
+        _calculateTotal();
+      } else {
+        removeFromCart(product.serverId);
+      }
+    }
+  }
+
   /// Removes a product from the cart by its product server ID.
   void removeFromCart(int productId) {
     final updatedItems = state.items
