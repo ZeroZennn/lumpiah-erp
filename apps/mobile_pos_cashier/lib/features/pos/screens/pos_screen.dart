@@ -5,6 +5,12 @@ import 'package:mobile_pos_cashier/local_db/entities/local_product.dart';
 import 'package:mobile_pos_cashier/features/pos/repositories/product_repository.dart';
 import 'package:mobile_pos_cashier/features/pos/repositories/transaction_repository.dart';
 import 'package:intl/intl.dart';
+import 'package:mobile_pos_cashier/features/auth/services/auth_service.dart';
+import 'package:mobile_pos_cashier/features/auth/screens/login_screen.dart';
+import 'package:mobile_pos_cashier/core/services/printer_service.dart';
+import 'package:blue_thermal_printer/blue_thermal_printer.dart';
+import 'package:mobile_pos_cashier/core/services/digital_receipt_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// High-fidelity Modern POS Screen with Responsive Layout
 /// - Tablet: Side-by-side layout (Product Catalog | Cart Panel)
@@ -24,6 +30,9 @@ class _PosScreenState extends State<PosScreen> {
   // Payment modal state
   final TextEditingController _cashInputController = TextEditingController();
   bool _isProcessing = false;
+
+  // Printer state
+  bool _isPrinterConnected = false;
 
   // Category list
   final List<String> _categories = ['Semua', 'Lumpia', 'Minuman', 'Paket'];
@@ -136,6 +145,310 @@ class _PosScreenState extends State<PosScreen> {
         );
       }
     }
+  }
+
+  /// Shows logout confirmation dialog
+  Future<void> _showLogoutConfirmation(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Konfirmasi Logout'),
+        content: const Text('Apakah anda yakin ingin keluar?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFB300),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: const Text('Ya', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFFFFB300)),
+                  SizedBox(height: 16),
+                  Text('Logging out...'),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      try {
+        // Call AuthService logout
+        await AuthService().logout();
+
+        if (context.mounted) {
+          // Dismiss loading dialog first
+          Navigator.of(context).pop();
+
+          // Small delay to ensure dialog is dismissed
+          await Future.delayed(const Duration(milliseconds: 100));
+
+          if (context.mounted) {
+            // Navigate to LoginScreen and remove all previous routes
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (context) => const LoginScreen()),
+              (route) => false,
+            );
+          }
+        }
+      } catch (e) {
+        if (context.mounted) {
+          // Dismiss loading dialog
+          Navigator.of(context).pop();
+
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Logout failed: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  /// Shows printer settings dialog
+  void _showPrinterSettings(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('Pengaturan Printer'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: FutureBuilder<List<BluetoothDevice>>(
+              future: PrinterService().getBondedDevices(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const SizedBox(
+                    height: 100,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFFFFB300),
+                      ),
+                    ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return Text('Error: ${snapshot.error}');
+                }
+
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return const Text(
+                    'Tidak ada printer yang terhubung (paired).',
+                  );
+                }
+
+                return ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: snapshot.data!.length,
+                  itemBuilder: (context, index) {
+                    final device = snapshot.data![index];
+                    return ListTile(
+                      leading: const Icon(Icons.print, color: Colors.grey),
+                      title: Text(device.name ?? 'Unknown Device'),
+                      subtitle: Text(device.address ?? ''),
+                      onTap: () => _connectToPrinter(context, device),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Tutup'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Connects to selected printer
+  Future<void> _connectToPrinter(
+    BuildContext context,
+    BluetoothDevice device,
+  ) async {
+    // Close the list dialog first
+    Navigator.of(context).pop();
+
+    // Show connecting loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(color: Color(0xFFFFB300)),
+                SizedBox(height: 16),
+                Text('Menghubungkan printer...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      await PrinterService().connect(device);
+
+      if (mounted) {
+        setState(() {
+          _isPrinterConnected = true;
+        });
+      }
+
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Printer Terhubung'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Dismiss loading
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal menghubungkan: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Shows dialog to input WhatsApp number and send receipt
+  void _showWhatsAppDialog(
+    BuildContext context,
+    Map<String, dynamic> transactionData,
+    List<Map<String, dynamic>> items,
+  ) {
+    final phoneController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: const Text('Kirim Struk via WhatsApp'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Masukkan nomor WhatsApp pelanggan (contoh: 08123456789)',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Nomor WhatsApp',
+                  prefixIcon: Icon(Icons.phone),
+                  border: OutlineInputBorder(),
+                  hintText: '08xxxxxxxxxx',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final input = phoneController.text.trim();
+                if (input.isEmpty) return;
+
+                // Format number: replace leading 0 with 62
+                String phoneNumber = input;
+                if (phoneNumber.startsWith('0')) {
+                  phoneNumber = '62${phoneNumber.substring(1)}';
+                }
+
+                Navigator.of(context).pop(); // Close dialog
+
+                try {
+                  // Generate text
+                  final text = DigitalReceiptService().generateWhatsAppText(
+                    transactionData: transactionData,
+                    items: items,
+                  );
+
+                  // Create WhatsApp URL
+                  final url = Uri.parse(
+                    'https://wa.me/$phoneNumber?text=${Uri.encodeComponent(text)}',
+                  );
+
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  } else {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Tidak dapat membuka WhatsApp'),
+                        ),
+                      );
+                    }
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Gagal mengirim WA: $e')),
+                    );
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Kirim'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   /// Shows the comprehensive payment modal with Cash and QRIS options
@@ -539,6 +852,62 @@ class _PosScreenState extends State<PosScreen> {
       setState(() => _isProcessing = false);
 
       if (success && context.mounted) {
+        // Prepare items for receipt (printer & digital)
+        final printItems = cartState.items.map((item) {
+          return {
+            'quantity': item.quantity,
+            'productName': item.product.name,
+            'price': item.product.price,
+          };
+        }).toList();
+
+        // Prepare transaction data
+        final transactionData = {
+          'branchName': await AuthService().getBranchName(),
+          'date': DateTime.now(),
+          'totalAmount': totalAmount,
+          'paymentMethod': paymentMethod,
+          'cashReceived': cashReceived ?? 0,
+          'change': cashReceived != null ? cashReceived - totalAmount : 0,
+          'transactionId': 'TRX-${DateTime.now().millisecondsSinceEpoch}',
+        };
+
+        // Auto-print receipt logic
+        final isConnected = await PrinterService().isConnected();
+
+        if (isConnected) {
+          try {
+            // Print receipt
+            await PrinterService().printReceipt(
+              transactionData: transactionData,
+              items: printItems,
+            );
+          } catch (e) {
+            debugPrint('Auto-print error: $e');
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Gagal mencetak struk'),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
+          }
+        } else {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Transaksi sukses, tapi printer tidak terhubung'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+
+        if (!context.mounted) return;
+
         // Close payment modal
         Navigator.of(context).pop();
 
@@ -551,6 +920,7 @@ class _PosScreenState extends State<PosScreen> {
         // Show success dialog
         showDialog(
           context: context,
+          barrierDismissible: false,
           builder: (context) => AlertDialog(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -570,12 +940,90 @@ class _PosScreenState extends State<PosScreen> {
                   style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                   textAlign: TextAlign.center,
                 ),
+                Text(
+                  'Kembalian: ${NumberFormat.currency(locale: 'id_ID', symbol: 'Rp ', decimalDigits: 0).format(cashReceived != null ? cashReceived - totalAmount : 0)}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+
+                // Digital Receipt Buttons
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      try {
+                        // Show loading
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Memproses PDF...')),
+                        );
+
+                        final pdfBytes = await DigitalReceiptService()
+                            .generatePdfReceipt(
+                              transactionData: transactionData,
+                              items: printItems,
+                            );
+
+                        await DigitalReceiptService().sharePdf(
+                          pdfBytes,
+                          transactionData['transactionId'] as String,
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Gagal membagikan PDF: $e')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.share),
+                    label: const Text('Bagikan Struk (PDF)'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      _showWhatsAppDialog(context, transactionData, printItems);
+                    },
+                    icon: const Icon(Icons.chat),
+                    label: const Text('Kirim via WhatsApp'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // Manual Print Button (Fallback)
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      try {
+                        await PrinterService().printReceipt(
+                          transactionData: transactionData,
+                          items: printItems,
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Gagal mencetak: $e')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.print),
+                    label: const Text('Cetak Struk'),
+                  ),
+                ),
               ],
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
+                child: const Text('Tutup / Transaksi Baru'),
               ),
             ],
           ),
@@ -846,19 +1294,63 @@ class _PosScreenState extends State<PosScreen> {
                 ),
                 const SizedBox(width: 24),
                 Expanded(child: _buildSearchBar()),
+                const SizedBox(width: 16),
+                // Printer setup button
+                IconButton(
+                  icon: const Icon(Icons.print),
+                  onPressed: () => _showPrinterSettings(context),
+                  tooltip: 'Pengaturan Printer',
+                  iconSize: 28,
+                  color: _isPrinterConnected
+                      ? Colors.green
+                      : const Color(0xFF2D2D2D),
+                ),
+                // Logout button
+                IconButton(
+                  icon: const Icon(Icons.logout),
+                  onPressed: () => _showLogoutConfirmation(context),
+                  tooltip: 'Keluar',
+                  iconSize: 28,
+                  color: const Color(0xFF2D2D2D),
+                ),
               ],
             )
           else
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Menu',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF2D2D2D),
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Menu',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF2D2D2D),
+                      ),
+                    ),
+                    // Action buttons (Printer + Logout)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.print),
+                          onPressed: () => _showPrinterSettings(context),
+                          tooltip: 'Pengaturan Printer',
+                          color: _isPrinterConnected
+                              ? Colors.green
+                              : const Color(0xFF2D2D2D),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.logout),
+                          onPressed: () => _showLogoutConfirmation(context),
+                          tooltip: 'Keluar',
+                          color: const Color(0xFF2D2D2D),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 _buildSearchBar(),
