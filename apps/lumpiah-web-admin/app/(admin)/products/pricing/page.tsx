@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Save, Building2, Search, Package, Loader2 } from "lucide-react";
 import { formatCurrency } from "@/shared/lib/format";
 import { Button } from "@/shared/components/ui/button";
@@ -46,6 +47,8 @@ export default function PricingPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: branches, isLoading: isLoadingBranches } = useBranches() as any;
     const updateProductPrice = useUpdateProductPrice();
+    const router = useRouter();
+    const searchParams = useSearchParams();
 
     const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
@@ -53,12 +56,24 @@ export default function PricingPage() {
     const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
     const [isSaving, setIsSaving] = useState(false);
 
-    // Set default selected product when data loads
+    // Sync state with URL param
     useEffect(() => {
-        if (productsData && productsData.length > 0 && !selectedProductId) {
+        const paramId = searchParams.get('productId');
+        if (paramId) {
+            const id = parseInt(paramId);
+            if (!isNaN(id)) {
+                setSelectedProductId(id);
+            }
+        }
+    }, [searchParams]);
+
+    // Set default selected product when data loads if no selection and no param
+    useEffect(() => {
+        const paramId = searchParams.get('productId');
+        if (productsData && productsData.length > 0 && !selectedProductId && !paramId) {
             setSelectedProductId(productsData[0].id);
         }
-    }, [productsData, selectedProductId]);
+    }, [productsData, selectedProductId, searchParams]);
 
     const product = selectedProductId ? productsData?.find((p) => p.id === selectedProductId) : null;
 
@@ -200,7 +215,10 @@ export default function PricingPage() {
                                     return (
                                         <button
                                             key={p.id}
-                                            onClick={() => setSelectedProductId(p.id)}
+                                            onClick={() => {
+                                                setSelectedProductId(p.id);
+                                                router.push(`/products/pricing?productId=${p.id}`);
+                                            }}
                                             className={cn(
                                                 "w-full text-left p-3 rounded-lg border transition-all",
                                                 "hover:bg-accent/50 hover:border-primary/30",
