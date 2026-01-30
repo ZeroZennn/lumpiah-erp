@@ -19,6 +19,18 @@ export interface Product {
   category?: Category;
 }
 
+export interface ProductListItem {
+  id: number;
+  name: string;
+  categoryId: number;
+  category: string;
+  unit: string;
+  price: number;
+  basePrice: number;
+  branchProductPrices: BranchProductPrice[];
+  isActive: boolean;
+}
+
 export interface BranchProductPrice {
   id: number;
   branchId: number;
@@ -39,11 +51,21 @@ export interface PriceAuditLog {
   changedAt: string;
 }
 
+export interface ProductHistoryItem {
+    id: string;
+    user: string;
+    timestamp: string;
+    branchName: string;
+    price: number;
+    oldPrice?: number;
+}
+
 export interface CreateProductRequest {
   name: string;
   categoryId: number;
-  unit: string;
+  unit?: string;
   basePrice: number;
+  isActive?: boolean;
 }
 
 export interface UpdateProductRequest {
