@@ -30,7 +30,7 @@ import { useBranches } from "@/features/branches/api/use-branches";
 import { ProductionTable } from "@/features/production/components/production-table";
 import { AccuracyChart } from "@/features/production/components/accuracy-chart";
 import { ProductionGuide } from "@/features/production/components/production-guide";
-import { useProductionPlans, useProductionAccuracy } from "@/features/production/api/use-production";
+import { useProductionPlans, useProductionAccuracy, useInitializeProduction } from "@/features/production/api/use-production";
 
 function Production() {
     const router = useRouter();
@@ -48,7 +48,6 @@ function Production() {
     const [date, setDate] = useState<Date>(
         parsedUrlDate && isValid(parsedUrlDate) ? parsedUrlDate : new Date()
     );
-    const [init, setInit] = useState(false);
 
     const branchId = parseInt(selectedBranch) || 0;
 
@@ -77,7 +76,6 @@ function Production() {
 
     const handleDateChange = (newDate: Date) => {
         setDate(newDate);
-        setInit(false); // Reset init on date change
         updateUrl(selectedBranch, newDate);
     };
 
@@ -87,17 +85,12 @@ function Production() {
         isLoading: plansLoading,
         isFetching,
         refetch: refetchPlans
-    } = useProductionPlans(branchId, date, init);
+    } = useProductionPlans(branchId, date);
 
-    useEffect(() => {
-        if (init && !isFetching) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
-            setInit(false);
-        }
-    }, [init, isFetching]);
+    const { mutate: initProduction, isPending: isInitializing } = useInitializeProduction();
 
     const initializePlans = () => {
-        setInit(true);
+        initProduction({ branchId, date });
     };
 
     const {
@@ -204,7 +197,7 @@ function Production() {
                     <CardContent className="p-0">
                         <ProductionTable
                             plans={plans || []}
-                            isLoading={plansLoading || (init && isFetching)}
+                            isLoading={plansLoading || isInitializing || (isFetching && (!plans || plans.length === 0))}
                             date={date}
                             onInitialize={initializePlans}
                             branchId={branchId}

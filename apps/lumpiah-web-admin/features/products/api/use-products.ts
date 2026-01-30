@@ -43,7 +43,33 @@ export const useUpdateProduct = () => {
       const response = await apiClient.put(`/products/${id}`, data);
       return response;
     },
-    onSuccess: () => {
+    onMutate: async ({ id, data }) => {
+      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+      await queryClient.cancelQueries({ queryKey: ['products'] });
+
+      // Snapshot the previous value
+      const previousProducts = queryClient.getQueryData<ProductListItem[]>(['products']);
+
+      // Optimistically update to the new value
+      queryClient.setQueryData<ProductListItem[]>(['products'], (old) => {
+        return old?.map((product) =>
+          product.id === id
+            ? { ...product, ...data }
+            : product
+        ) ?? [];
+      });
+
+      // Return a context object with the snapshotted value
+      return { previousProducts };
+    },
+    onError: (_err, _newProduct, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousProducts) {
+        queryClient.setQueryData(['products'], context.previousProducts);
+      }
+    },
+    onSettled: () => {
+      // Always refetch after error or success:
       queryClient.invalidateQueries({ queryKey: ['products'] });
     },
   });
@@ -57,7 +83,35 @@ export const useUpdateProductPrice = () => {
       const response = await apiClient.put(`/products/${id}/price`, data);
       return response;
     },
-    onSuccess: (_, variables) => {
+    onMutate: async ({ id, data }) => {
+      // Cancel outgoing refetches for products and specific product history
+      await queryClient.cancelQueries({ queryKey: ['products'] });
+      await queryClient.cancelQueries({ queryKey: ['product-history', id] });
+
+      // Snapshot previous values
+      const previousProducts = queryClient.getQueryData<ProductListItem[]>(['products']);
+
+      // Optimistically update the product list with the new price
+      // Note: updating "price" or "basePrice" depending on what "price" maps to in the list. 
+      // Based on types, ProductListItem has "price" and "basePrice". 
+      // UpdateProductPriceRequest has "price". 
+      // We'll update "price" in the list item.
+      queryClient.setQueryData<ProductListItem[]>(['products'], (old) => {
+        return old?.map((product) =>
+            product.id === id
+                ? { ...product, price: data.price }
+                : product
+        ) ?? [];
+      });
+
+      return { previousProducts };
+    },
+    onError: (_err, _variables, context) => {
+      if (context?.previousProducts) {
+        queryClient.setQueryData(['products'], context.previousProducts);
+      }
+    },
+    onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['product-history', variables.id] });
     },
