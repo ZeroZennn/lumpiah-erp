@@ -27,13 +27,15 @@ export type AccuracyReportItem = {
 
 // --- QUERIES ---
 
-export const useProductionPlans = (branchId: number, date: Date, init: boolean = false) => {
+export const useProductionPlans = (branchId: number, date: Date) => {
   return useQuery({
-    queryKey: ['production-plans', branchId, format(date, 'yyyy-MM-dd'), init],
+    queryKey: ['production-plans', branchId, format(date, 'yyyy-MM-dd')],
     queryFn: async () => {
       const dateStr = format(date, 'yyyy-MM-dd');
+      // Always fetch with init=false (or undefined) for standard viewing
+      // The initialization is now handled by a separate mutation
       const response = await apiClient.get<ProductionPlan[]>(`/production/plans`, {
-        params: { branchId, date: dateStr, init },
+        params: { branchId, date: dateStr },
       });
       return response as unknown as ProductionPlan[];
     },
@@ -56,6 +58,31 @@ export const useProductionAccuracy = (branchId: number, date: Date) => {
 };
 
 // --- MUTATIONS ---
+
+export const useInitializeProduction = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ branchId, date }: { branchId: number, date: Date }) => {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      // Explicitly call with init=true to trigger creation/calculation
+      const response = await apiClient.get<ProductionPlan[]>(`/production/plans`, {
+        params: { branchId, date: dateStr, init: true },
+      });
+      return response;
+    },
+    onSuccess: (_, variables) => {
+       // Invalidate the specific query for this branch/date so it refetches immediately
+       queryClient.invalidateQueries({ 
+         queryKey: ['production-plans', variables.branchId, format(variables.date, 'yyyy-MM-dd')] 
+       });
+       // Also invalidate accuracy in case it's related
+       queryClient.invalidateQueries({ 
+         queryKey: ['production-accuracy', variables.branchId, format(variables.date, 'yyyy-MM-dd')] 
+       });
+    },
+  });
+};
 
 export const useSubmitRealization = () => {
   const queryClient = useQueryClient();
