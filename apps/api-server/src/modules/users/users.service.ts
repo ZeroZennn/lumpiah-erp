@@ -42,6 +42,7 @@ export class UsersService {
       where: { branchId },
       include: {
         role: true,
+        branch: true,
       },
       orderBy: {
         id: 'asc',

@@ -260,7 +260,7 @@ export default function UsersPage() {
                                     <TableRow key={user.id}>
                                         <TableCell className="font-medium">{user.fullname}</TableCell>
                                         <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                                        <TableCell>{user.branchName || "Pusat"}</TableCell>
+                                        <TableCell>{user.branch?.name || "Pusat"}</TableCell>
                                         <TableCell>
                                             <Badge
                                                 variant="outline"

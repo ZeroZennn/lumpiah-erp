@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { ArrowLeft, Save, Building2, Search, Package, Loader2 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, Save, Building2, Search, Package, Loader2, RotateCw } from "lucide-react";
 import { formatCurrency } from "@/shared/lib/format";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
@@ -41,11 +42,25 @@ interface PendingChange {
 }
 
 export default function PricingPage() {
-    const { data: productsData, isLoading: isLoadingProducts } = useProducts();
-    const { data: categories, isLoading: isLoadingCategories } = useCategories();
+    return (
+        <Suspense fallback={
+            <div className="flex h-screen items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        }>
+            <PricingPageContent />
+        </Suspense>
+    );
+}
+
+function PricingPageContent() {
+    const { data: productsData, isLoading: isLoadingProducts, refetch: refetchProducts } = useProducts();
+    const { data: categories, isLoading: isLoadingCategories, refetch: refetchCategories } = useCategories();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: branches, isLoading: isLoadingBranches } = useBranches() as any;
+    const { data: branches, isLoading: isLoadingBranches, refetch: refetchBranches } = useBranches() as any;
     const updateProductPrice = useUpdateProductPrice();
+    const router = useRouter();
+    const searchParams = useSearchParams();
 
     const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
@@ -53,12 +68,32 @@ export default function PricingPage() {
     const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
     const [isSaving, setIsSaving] = useState(false);
 
-    // Set default selected product when data loads
+    // Sync state with URL param
     useEffect(() => {
-        if (productsData && productsData.length > 0 && !selectedProductId) {
-            setSelectedProductId(productsData[0].id);
+        const paramId = searchParams.get('productId');
+        if (paramId) {
+            const id = parseInt(paramId);
+            if (!isNaN(id)) {
+                setSelectedProductId(id);
+            }
+        } else {
+            setSelectedProductId(null);
         }
-    }, [productsData, selectedProductId]);
+    }, [searchParams]);
+
+    const handleRefresh = async () => {
+        const promise = Promise.all([
+            refetchProducts(),
+            refetchCategories(),
+            refetchBranches()
+        ]);
+
+        toast.promise(promise, {
+            loading: 'Memperbarui data...',
+            success: 'Data berhasil diperbarui',
+            error: 'Gagal memperbarui data',
+        });
+    };
 
     const product = selectedProductId ? productsData?.find((p) => p.id === selectedProductId) : null;
 
@@ -141,12 +176,18 @@ export default function PricingPage() {
                         Atur harga khusus per cabang untuk setiap produk
                     </p>
                 </div>
-                {pendingChanges.length > 0 && (
-                    <Button className="gap-2" onClick={handleSaveChanges} disabled={isSaving}>
-                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                        Simpan ({pendingChanges.length}) Perubahan
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={handleRefresh} className="gap-2">
+                        <RotateCw className="h-4 w-4" />
+                        Refresh
                     </Button>
-                )}
+                    {pendingChanges.length > 0 && (
+                        <Button size="sm" className="gap-2" onClick={handleSaveChanges} disabled={isSaving}>
+                            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                            Simpan ({pendingChanges.length})
+                        </Button>
+                    )}
+                </div>
             </div>
 
             {/* Master-Detail Layout */}
@@ -200,7 +241,10 @@ export default function PricingPage() {
                                     return (
                                         <button
                                             key={p.id}
-                                            onClick={() => setSelectedProductId(p.id)}
+                                            onClick={() => {
+                                                setSelectedProductId(p.id);
+                                                router.push(`/products/pricing?productId=${p.id}`);
+                                            }}
                                             className={cn(
                                                 "w-full text-left p-3 rounded-lg border transition-all",
                                                 "hover:bg-accent/50 hover:border-primary/30",
