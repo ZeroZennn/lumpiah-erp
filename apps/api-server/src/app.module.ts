@@ -13,6 +13,7 @@ import { SystemModule } from './modules/system/system.module';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ProductsModule } from './modules/products/products.module';
+import { TransactionsModule } from './modules/transactions/transactions.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 
 @Module({
@@ -29,6 +30,7 @@ import { CategoriesModule } from './modules/categories/categories.module';
     CommonModule,
     AuthModule,
     ProductsModule,
+    TransactionsModule,
     CategoriesModule,
   ],
   controllers: [AppController],

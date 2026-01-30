@@ -6,6 +6,7 @@ import {
   ParseIntPipe,
   Post,
   Put,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
@@ -20,8 +21,9 @@ export class ProductsController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  async findAll() {
-    return this.productsService.findAll();
+  async findAll(@Request() req: { user: { branchId: number } }) {
+    const branchId = req.user.branchId;
+    return this.productsService.findAll(branchId);
   }
 
   @Post()
