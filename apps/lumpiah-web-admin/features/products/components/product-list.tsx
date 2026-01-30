@@ -1,4 +1,5 @@
 import { DataTable } from '@/shared/components/ui/data-table';
+import { useDebounce } from '@/shared/hooks/use-debounce';
 import { useProducts } from '../api/use-products';
 import { useCategories } from '../api/use-categories';
 import { useBranches } from '@/features/branches/api/use-branches';
@@ -8,7 +9,7 @@ import { DataTableColumnHeader } from '@/shared/components/ui/data-table-column-
 import { Badge } from '@/shared/components/ui/badge';
 import { formatCurrency } from '@/shared/lib/format';
 import { Button } from '@/shared/components/ui/button';
-import { MoreHorizontal, Edit, DollarSign } from 'lucide-react';
+import { MoreHorizontal, Edit, DollarSign, Search, X } from 'lucide-react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -23,33 +24,89 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/shared/components/ui/select';
-import { useState } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
+import { Input } from '@/shared/components/ui/input';
 import { ProductForm } from './product-form';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
-
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 
 export const ProductList = () => {
     const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
     const { data: products, isLoading } = useProducts();
     const { data: categories } = useCategories();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { data: branches } = useBranches() as any;
     const [editingProduct, setEditingProduct] = useState<ProductListItem | null>(null);
-    const [statusFilter, setStatusFilter] = useState<string>('all');
-    const [categoryFilter, setCategoryFilter] = useState<string>('all');
-    const [branchFilter, setBranchFilter] = useState<string>('all');
 
-    const filteredProducts = products?.filter((product) => {
-        const matchesStatus = statusFilter === 'all' ||
-            (statusFilter === 'active' && product.isActive) ||
-            (statusFilter === 'inactive' && !product.isActive);
+    // --- Filter State (Synced with URL) ---
+    const statusFilter = searchParams.get('status') || 'all';
+    const categoryFilter = searchParams.get('category') || 'all';
+    const branchFilter = searchParams.get('branch') || 'all';
 
-        const matchesCategory = categoryFilter === 'all' ||
-            String(product.categoryId) === categoryFilter;
+    // Helper to update URL params
+    const updateFilterParams = useCallback((updates: Record<string, string>) => {
+        const params = new URLSearchParams(searchParams.toString());
+        let hasChanges = false;
 
-        return matchesStatus && matchesCategory;
-    });
+        Object.entries(updates).forEach(([key, value]) => {
+            const current = params.get(key);
+            if (value && value !== 'all') {
+                if (current !== value) {
+                    params.set(key, value);
+                    hasChanges = true;
+                }
+            } else {
+                if (params.has(key)) {
+                    params.delete(key);
+                    hasChanges = true;
+                }
+            }
+        });
+
+        // Reset page to 1 on filter change
+        if (!updates.page && params.has('page') && params.get('page') !== '1') {
+            params.set('page', '1');
+            hasChanges = true;
+        }
+
+        if (hasChanges) {
+            router.push(`${pathname}?${params.toString()}`, { scroll: false });
+        }
+    }, [pathname, router, searchParams]);
+
+    // Search Debounce Implementation
+    const urlSearchQuery = searchParams.get('q') || '';
+    const [searchValue, setSearchValue] = useState(urlSearchQuery);
+    const debouncedSearch = useDebounce(searchValue, 500);
+
+    // Sync input with URL when URL changes externally
+    useEffect(() => {
+        setSearchValue(urlSearchQuery);
+    }, [urlSearchQuery]);
+
+    // Sync URL with debounced value
+    useEffect(() => {
+        // Only update if value actually changed to prevent loops
+        if (debouncedSearch !== urlSearchQuery) {
+            updateFilterParams({ q: debouncedSearch });
+        }
+    }, [debouncedSearch, urlSearchQuery, updateFilterParams]);
+
+    const filteredProducts = useMemo(() => {
+        return products?.filter((product) => {
+            const matchesSearch = product.name.toLowerCase().includes(urlSearchQuery.toLowerCase());
+            const matchesStatus = statusFilter === 'all' ||
+                (statusFilter === 'active' && product.isActive) ||
+                (statusFilter === 'inactive' && !product.isActive);
+
+            const matchesCategory = categoryFilter === 'all' ||
+                String(product.categoryId) === categoryFilter;
+
+            return matchesSearch && matchesStatus && matchesCategory;
+        });
+    }, [products, urlSearchQuery, statusFilter, categoryFilter]);
 
     const columns: ColumnDef<ProductListItem>[] = [
         {
@@ -70,13 +127,13 @@ export const ProductList = () => {
         // Only show Branch Price column if a specific branch is selected
         ...(branchFilter !== 'all' ? [{
             id: 'branchPrice',
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             header: ({ column }: { column: any }) => <DataTableColumnHeader column={column} title="Branch Price" />,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             cell: ({ row }: { row: any }) => {
                 const prices: { branchId: number; price: number }[] = row.original.branchProductPrices || [];
                 const branchId = parseInt(branchFilter);
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                 
                 const override = prices.find((p: any) => p.branchId === branchId);
 
                 if (override) {
@@ -137,10 +194,28 @@ export const ProductList = () => {
                 columns={columns}
                 data={filteredProducts || []}
                 isLoading={isLoading}
-                searchKey="name"
                 toolbarActions={
                     <div className="flex gap-2">
-                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <div className="relative w-[200px]">
+                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Cari produk..."
+                                value={searchValue}
+                                onChange={(e) => setSearchValue(e.target.value)}
+                                className="pl-9 h-9"
+                            />
+                            {searchValue && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setSearchValue('')}
+                                    className="absolute right-0 top-0 h-9 w-9 text-muted-foreground"
+                                >
+                                    <X className="h-4 w-4" />
+                                </Button>
+                            )}
+                        </div>
+                        <Select value={statusFilter} onValueChange={(val) => updateFilterParams({ status: val })}>
                             <SelectTrigger className="w-[150px]">
                                 <SelectValue placeholder="Status" />
                             </SelectTrigger>
@@ -151,7 +226,7 @@ export const ProductList = () => {
                             </SelectContent>
                         </Select>
 
-                        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                        <Select value={categoryFilter} onValueChange={(val) => updateFilterParams({ category: val })}>
                             <SelectTrigger className="w-[180px]">
                                 <SelectValue placeholder="All Categories" />
                             </SelectTrigger>
@@ -165,13 +240,13 @@ export const ProductList = () => {
                             </SelectContent>
                         </Select>
 
-                        <Select value={branchFilter} onValueChange={setBranchFilter}>
+                        <Select value={branchFilter} onValueChange={(val) => updateFilterParams({ branch: val })}>
                             <SelectTrigger className="w-[180px]">
                                 <SelectValue placeholder="All Branches" />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Branches</SelectItem>
-                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                { }
                                 {branches?.map((branch: any) => (
                                     <SelectItem key={branch.id} value={String(branch.id)}>
                                         {branch.name}
@@ -181,6 +256,16 @@ export const ProductList = () => {
                         </Select>
                     </div>
                 }
+                pagination={{
+                    pageIndex: parseInt(searchParams.get('page') || '1') - 1,
+                    pageSize: parseInt(searchParams.get('limit') || '10'),
+                }}
+                onPaginationChange={(newPagination) => {
+                    updateFilterParams({
+                        page: String(newPagination.pageIndex + 1),
+                        limit: String(newPagination.pageSize)
+                    });
+                }}
             />
 
             <Dialog open={!!editingProduct} onOpenChange={(open) => !open && setEditingProduct(null)}>
