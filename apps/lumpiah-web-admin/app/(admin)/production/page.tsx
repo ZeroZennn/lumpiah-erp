@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { Factory, Settings, Building2, RefreshCcw } from "lucide-react";
 
@@ -56,6 +56,12 @@ function Production() {
         const params = new URLSearchParams(searchParams.toString());
         if (newBranchId) params.set("branchId", newBranchId);
         params.set("date", format(newDate, "yyyy-MM-dd"));
+
+        // Reset page to 1 when changing top-level filters
+        if (params.has('page')) {
+            params.set('page', '1');
+        }
+
         router.push(`${pathname}?${params.toString()}`, { scroll: false });
     }, [searchParams, router, pathname]);
 
@@ -103,6 +109,8 @@ function Production() {
         refetchPlans();
         refetchAccuracy();
     };
+
+    const safePlans = useMemo(() => plans || [], [plans]);
 
     return (
         <div className="space-y-6">
@@ -196,12 +204,13 @@ function Production() {
                     </CardHeader>
                     <CardContent className="p-0">
                         <ProductionTable
-                            plans={plans || []}
+                            plans={safePlans}
                             isLoading={plansLoading || isInitializing || (isFetching && (!plans || plans.length === 0))}
                             date={date}
                             onInitialize={initializePlans}
                             branchId={branchId}
                         />
+
                     </CardContent>
                 </TabsContent>
 

@@ -46,6 +46,10 @@ interface DataTableProps<TData, TValue> {
     searchPlaceholder?: string
     isLoading?: boolean
     toolbarActions?: React.ReactNode
+    pageCount?: number
+    onPaginationChange?: (pagination: { pageIndex: number; pageSize: number }) => void
+    pagination?: { pageIndex: number; pageSize: number }
+    manualPagination?: boolean
 }
 
 export function DataTable<TData, TValue>({
@@ -55,6 +59,10 @@ export function DataTable<TData, TValue>({
     searchPlaceholder = "Cari data...",
     isLoading,
     toolbarActions,
+    pageCount,
+    onPaginationChange,
+    pagination,
+    manualPagination,
 }: DataTableProps<TData, TValue>) {
     const [sorting, setSorting] = React.useState<SortingState>([])
     const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -73,11 +81,22 @@ export function DataTable<TData, TValue>({
         getFilteredRowModel: getFilteredRowModel(),
         onColumnVisibilityChange: setColumnVisibility,
         onRowSelectionChange: setRowSelection,
+        manualPagination: manualPagination ?? !!pageCount,
+        pageCount: pageCount,
+        onPaginationChange: onPaginationChange ? (updater) => {
+            if (typeof updater === 'function') {
+                const newPagination = updater(pagination || { pageIndex: 0, pageSize: 10 });
+                onPaginationChange(newPagination);
+            } else {
+                onPaginationChange(updater);
+            }
+        } : undefined,
         state: {
             sorting,
             columnFilters,
             columnVisibility,
             rowSelection,
+            ...(pagination && { pagination }),
         },
     })
 
@@ -200,7 +219,7 @@ export function DataTable<TData, TValue>({
                                 <SelectValue placeholder={table.getState().pagination.pageSize} />
                             </SelectTrigger>
                             <SelectContent side="top">
-                                {[10, 20, 30, 40, 50].map((pageSize) => (
+                                {[5, 10, 20, 30, 40, 50].map((pageSize) => (
                                     <SelectItem key={pageSize} value={`${pageSize}`}>
                                         {pageSize}
                                     </SelectItem>

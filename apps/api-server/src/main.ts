@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 
 // Fix BigInt serialization for JSON
@@ -18,6 +19,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const port = process.env.PORT || 4000;
   app.enableCors();
+  app.useGlobalPipes(new ValidationPipe({ transform: true }));
   await app.listen(port);
   console.log(`Application is running on: ${await app.getUrl()}`);
 }

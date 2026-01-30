@@ -5,12 +5,7 @@ import { format, isAfter, startOfDay } from 'date-fns';
 import { useSubmitRealization, ProductionPlan } from '../api/use-production';
 import { useDssConfig } from '../api/use-dss';
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
+
 } from '@/shared/components/ui/table';
 import { Input } from '@/shared/components/ui/input';
 import { Button } from '@/shared/components/ui/button';
@@ -37,6 +32,7 @@ import {
 import { Search, X } from 'lucide-react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import { useDebounce } from '@/shared/hooks/use-debounce';
 
 
 interface ProductionTableProps {
@@ -52,14 +48,15 @@ export function ProductionTable({ plans, isLoading, date, onInitialize, branchId
     const pathname = usePathname();
     const searchParams = useSearchParams();
 
-    const { mutate: submitRealization, isPending } = useSubmitRealization();
-    const [localPlans, setLocalPlans] = useState<ProductionPlan[]>(plans);
-    const [prevPlans, setPrevPlans] = useState<ProductionPlan[]>(plans);
+    const { mutate: submitRealization } = useSubmitRealization();
+    const [localPlans, setLocalPlans] = useState<ProductionPlan[]>(plans || []);
 
-    if (plans !== prevPlans) {
-        setLocalPlans(plans);
-        setPrevPlans(plans);
-    }
+    // Sync local state with props using useEffect to avoid render loops
+    useEffect(() => {
+        if (plans) {
+            setLocalPlans(plans);
+        }
+    }, [plans]);
 
     const [savingId, setSavingId] = useState<number | null>(null);
 
@@ -81,8 +78,8 @@ export function ProductionTable({ plans, isLoading, date, onInitialize, branchId
 
         // Data for rendering
         let d1 = "0", d2 = "0", d3 = "0", avg = "0", bufferPercent = "0", bufferAmt = "0";
-         
-        let isParsed = false;
+
+
 
         // Highly Robust Sequential Parsing
         const nums = log.match(/\d+(\.\d+)?/g) || [];
@@ -93,7 +90,6 @@ export function ProductionTable({ plans, isLoading, date, onInitialize, branchId
             d2 = nums[2] ?? "0";
             d3 = nums[4] ?? "0";
             avg = nums[6] ?? "0";
-            isParsed = true;
 
             // Extra checks for buffer/safety stock in the latter part of the string
             const safetyPart = log.slice(log.lastIndexOf('='));
@@ -115,7 +111,6 @@ export function ProductionTable({ plans, isLoading, date, onInitialize, branchId
             d2 = nums[1] ?? "0";
             d3 = nums[2] ?? "0";
             avg = nums[3] ?? "0";
-            isParsed = true;
             const safetyMatch = log.match(/(\d+)\s*%\D*(\d+)/);
             if (safetyMatch) {
                 [, bufferPercent, bufferAmt] = safetyMatch;
@@ -173,22 +168,68 @@ export function ProductionTable({ plans, isLoading, date, onInitialize, branchId
     };
 
     // --- Filter State (Synced with URL) ---
-    const searchQuery = searchParams.get('q') || '';
     const selectedStatus = searchParams.get('status') || 'all';
     const selectedCategory = searchParams.get('category') || 'all';
 
     // Helper to update URL params
     const updateFilterParams = useCallback((updates: Record<string, string>) => {
         const params = new URLSearchParams(searchParams.toString());
+        let hasChanges = false;
+
         Object.entries(updates).forEach(([key, value]) => {
+            const current = params.get(key);
             if (value && value !== 'all') {
-                params.set(key, value);
+                if (current !== value) {
+                    params.set(key, value);
+                    hasChanges = true;
+                }
             } else {
-                params.delete(key);
+                if (params.has(key)) {
+                    params.delete(key);
+                    hasChanges = true;
+                }
             }
         });
-        router.push(`${pathname}?${params.toString()}`, { scroll: false });
+
+        // Reset page to 1 if we are filtering (not paginating)
+        if (!updates.page && params.has('page') && params.get('page') !== '1') {
+            params.set('page', '1');
+            hasChanges = true;
+        }
+
+        if (hasChanges) {
+            router.push(`${pathname}?${params.toString()}`, { scroll: false });
+        }
     }, [pathname, router, searchParams]);
+
+    // --- Pagination State (Synced with URL) ---
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+
+    // Update URL when pagination changes (DataTable calls this)
+    const handlePaginationChange = useCallback((newPagination: { pageIndex: number; pageSize: number }) => {
+        updateFilterParams({
+            page: String(newPagination.pageIndex + 1),
+            limit: String(newPagination.pageSize)
+        });
+    }, [updateFilterParams]);
+
+    // Search Debounce Implementation
+    const urlSearchQuery = searchParams.get('q') || '';
+    const [searchValue, setSearchValue] = useState(urlSearchQuery);
+    const debouncedSearch = useDebounce(searchValue, 500);
+
+    // Sync input with URL when URL changes externally
+    useEffect(() => {
+        setSearchValue(urlSearchQuery);
+    }, [urlSearchQuery]);
+
+    // Sync URL with debounced value
+    useEffect(() => {
+        if (debouncedSearch !== urlSearchQuery) {
+            updateFilterParams({ q: debouncedSearch });
+        }
+    }, [debouncedSearch, urlSearchQuery, updateFilterParams]);
 
     // Extract unique categories from actual data
     const categories = useMemo(() => {
@@ -199,12 +240,12 @@ export function ProductionTable({ plans, isLoading, date, onInitialize, branchId
     // Filtered Data
     const filteredPlans = useMemo(() => {
         return localPlans.filter(plan => {
-            const matchesSearch = plan.productName.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesSearch = plan.productName.toLowerCase().includes(urlSearchQuery.toLowerCase());
             const matchesStatus = selectedStatus === 'all' || plan.status === selectedStatus;
             const matchesCategory = selectedCategory === 'all' || plan.categoryName === selectedCategory;
             return matchesSearch && matchesStatus && matchesCategory;
         });
-    }, [localPlans, searchQuery, selectedStatus, selectedCategory]);
+    }, [localPlans, urlSearchQuery, selectedStatus, selectedCategory]);
 
     const handleQtyChange = useCallback((planId: number, val: string) => {
         // Allow empty string for better typing experience, default to 0 for calculation
@@ -528,15 +569,15 @@ export function ProductionTable({ plans, isLoading, date, onInitialize, branchId
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                         placeholder="Cari produk..."
-                        value={searchQuery}
-                        onChange={(e) => updateFilterParams({ q: e.target.value })}
+                        value={searchValue}
+                        onChange={(e) => setSearchValue(e.target.value)}
                         className="pl-9 h-9"
                     />
-                    {searchQuery && (
+                    {searchValue && (
                         <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => updateFilterParams({ q: '' })}
+                            onClick={() => setSearchValue('')}
                             className="absolute right-0 top-0 h-9 w-9 text-muted-foreground"
                         >
                             <X className="h-4 w-4" />
@@ -646,6 +687,11 @@ export function ProductionTable({ plans, isLoading, date, onInitialize, branchId
             data={filteredPlans}
             isLoading={isLoading}
             toolbarActions={toolbarActions}
+            pagination={{
+                pageIndex: page - 1,
+                pageSize: limit,
+            }}
+            onPaginationChange={handlePaginationChange}
         />
     );
 }
