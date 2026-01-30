@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/api/api_client.dart';
@@ -47,5 +48,61 @@ class AuthService {
   /// Logout and clear all stored data
   Future<void> logout() async {
     await _storage.deleteAll();
+    print('User logged out');
+  }
+
+  /// Get branch name from token
+  Future<String> getBranchName() async {
+    final token = await getToken();
+    if (token == null) return 'Cabang Utama';
+
+    try {
+      final payload = _parseJwt(token);
+      final branchId = payload['branchId'];
+
+      // Mapping branch ID to Name (should be dynamic in real app)
+      switch (branchId) {
+        case 1:
+          return 'Semarang Pusat';
+        case 2:
+          return 'Cabang Jakarta';
+        case 3:
+          return 'Cabang Surabaya';
+        default:
+          return 'Cabang $branchId';
+      }
+    } catch (e) {
+      return 'Cabang Utama';
+    }
+  }
+
+  Map<String, dynamic> _parseJwt(String token) {
+    final parts = token.split('.');
+    if (parts.length != 3) {
+      throw Exception('Invalid token');
+    }
+    final payload = _decodeBase64(parts[1]);
+    final payloadMap = json.decode(payload);
+    if (payloadMap is! Map<String, dynamic>) {
+      throw Exception('Invalid payload');
+    }
+    return payloadMap;
+  }
+
+  String _decodeBase64(String str) {
+    String output = str.replaceAll('-', '+').replaceAll('_', '/');
+    switch (output.length % 4) {
+      case 0:
+        break;
+      case 2:
+        output += '==';
+        break;
+      case 3:
+        output += '=';
+        break;
+      default:
+        throw Exception('Illegal base64url string!"');
+    }
+    return utf8.decode(base64Url.decode(output));
   }
 }

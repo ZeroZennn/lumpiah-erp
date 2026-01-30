@@ -15,12 +15,12 @@ interface PriceAuditValue {
 export class ProductsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
+  async findAll(branchId?: number) {
     const products = await this.prisma.product.findMany({
       where: {},
       include: {
         category: true,
-        branchProductPrices: true,
+        branchProductPrices: branchId ? { where: { branchId } } : true,
       },
       orderBy: {
         name: 'asc',
@@ -34,7 +34,8 @@ export class ProductsService {
       categoryId: product.categoryId,
       category: product.category.name,
       unit: product.unit,
-      price: product.branchProductPrices[0]?.price || product.basePrice,
+      // Prioritize branch-specific price, fall back to base price
+      price: product.branchProductPrices[0]?.price ?? product.basePrice,
       basePrice: product.basePrice,
       branchProductPrices: product.branchProductPrices,
       isActive: product.isActive,

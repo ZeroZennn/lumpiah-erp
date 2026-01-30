@@ -1,11 +1,14 @@
 import 'package:dio/dio.dart';
+import 'package:isar/isar.dart';
 import '../../../core/api/api_client.dart';
 import '../../../features/auth/services/auth_service.dart';
+import '../../../core/services/local_db_service.dart';
 import '../../../local_db/entities/local_product.dart';
 
 class ProductRepository {
   final ApiClient _apiClient = ApiClient();
   final AuthService _authService = AuthService();
+  final Isar _localDb = LocalDbService().isar;
 
   /// Fetch products from backend API
   /// Returns list of LocalProduct on success
@@ -35,30 +38,32 @@ class ProductRepository {
             .map((json) => LocalProduct.fromJson(json as Map<String, dynamic>))
             .toList();
 
+        // 6. Cache to Isar (Clear old data -> Save new data)
+        await _localDb.writeTxn(() async {
+          await _localDb.localProducts.clear();
+          await _localDb.localProducts.putAll(products);
+        });
+
         return products;
       } else {
         throw Exception('Failed to fetch products: ${response.statusCode}');
       }
-    } on DioException catch (e) {
-      // Handle Dio-specific errors
-      if (e.response?.statusCode == 401) {
-        throw Exception('Unauthorized. Please login again.');
-      } else if (e.response?.statusCode == 403) {
-        throw Exception('Forbidden. You do not have access to this resource.');
-      } else if (e.response?.statusCode == 404) {
-        throw Exception('Products endpoint not found.');
-      } else if (e.type == DioExceptionType.connectionTimeout) {
-        throw Exception(
-          'Connection timeout. Please check your internet connection.',
-        );
-      } else if (e.type == DioExceptionType.receiveTimeout) {
-        throw Exception('Server is taking too long to respond.');
-      } else {
-        throw Exception('Network error: ${e.message}');
-      }
     } catch (e) {
-      // Handle any other errors
-      throw Exception('Failed to fetch products: $e');
+      // Offline Flow (Fall back to Local DB)
+      // Catching any error (DioException, SocketException, User not found, etc.)
+
+      // Log for debugging
+      // ignore: avoid_print
+      print('Fetching products from local DB due to error: $e');
+
+      final localProducts = await _localDb.localProducts.where().findAll();
+
+      if (localProducts.isNotEmpty) {
+        return localProducts;
+      }
+
+      // If local DB is also empty, rethrow the original error to show to user
+      rethrow;
     }
   }
 

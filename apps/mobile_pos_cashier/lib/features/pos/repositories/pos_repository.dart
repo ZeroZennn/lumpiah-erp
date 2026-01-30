@@ -14,31 +14,21 @@ class PosRepository {
     return await _isar.localProducts.where().findAll();
   }
 
-  /// Saves a transaction to the local Isar database synchronously.
+  /// Saves a transaction to the local Isar database.
   ///
   /// [trx] - The transaction to be saved.
   /// Returns the ID of the saved transaction.
   Future<int> saveTransaction(LocalTransaction trx) async {
     return await _isar.writeTxn(() async {
-      // Save all transaction items first
-      for (final item in trx.items) {
-        await _isar.localTransactionItems.put(item);
-      }
-
-      // Save the transaction and persist the links
-      final id = await _isar.localTransactions.put(trx);
-      await trx.items.save();
-
-      return id;
+      return await _isar.localTransactions.put(trx);
     });
   }
 
-  /// Fetches all transactions with 'DRAFT' status from the local database.
-  /// Returns a list of [LocalTransaction] with status == 'DRAFT'.
-  Future<List<LocalTransaction>> getDraftTransactions() async {
+  /// Fetches all unsynced transactions.
+  Future<List<LocalTransaction>> getUnsyncedTransactions() async {
     return await _isar.localTransactions
         .filter()
-        .statusEqualTo('DRAFT')
+        .isSyncedEqualTo(false)
         .findAll();
   }
 }
