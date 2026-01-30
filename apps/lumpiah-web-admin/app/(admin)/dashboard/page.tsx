@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
@@ -325,7 +325,7 @@ function ProductionStatusWidget({ data, isLoading }: { data: ProductionSummary[]
 }
 
 
-export default function DashboardPage() {
+function DashboardContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const pathname = usePathname();
@@ -495,5 +495,33 @@ export default function DashboardPage() {
                 <ProductionStatusWidget data={production || []} isLoading={isLoadingProd} />
             </div>
         </div>
+    );
+}
+
+function DashboardLoading() {
+    return (
+        <div className="space-y-6">
+            <div className="flex justify-between items-center">
+                <Skeleton className="h-8 w-[200px]" />
+                <Skeleton className="h-10 w-[400px]" />
+            </div>
+            <div className="grid gap-4 md:grid-cols-4">
+                {[1, 2, 3, 4].map(i => (
+                    <Skeleton key={i} className="h-[120px] w-full" />
+                ))}
+            </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+                <Skeleton className="h-[300px] col-span-2" />
+                <Skeleton className="h-[300px]" />
+            </div>
+        </div>
+    );
+}
+
+export default function DashboardPage() {
+    return (
+        <Suspense fallback={<DashboardLoading />}>
+            <DashboardContent />
+        </Suspense>
     );
 }
