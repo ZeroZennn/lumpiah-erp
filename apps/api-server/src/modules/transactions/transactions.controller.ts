@@ -10,6 +10,7 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  ParseArrayPipe,
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -29,6 +30,20 @@ export class TransactionsController {
     return this.transactionsService.create(
       createTransactionDto,
       req.user.userId, // Changed from req.user.id to req.user.userId
+      req.user.branchId,
+    );
+  }
+
+  @Post('sync')
+  @HttpCode(HttpStatus.OK)
+  sync(
+    @Body(new ParseArrayPipe({ items: CreateTransactionDto }))
+    transactions: CreateTransactionDto[],
+    @Request() req: { user: { userId: number; branchId: number } },
+  ) {
+    return this.transactionsService.syncBatch(
+      transactions,
+      req.user.userId,
       req.user.branchId,
     );
   }

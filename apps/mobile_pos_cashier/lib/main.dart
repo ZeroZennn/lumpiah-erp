@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 // Core
 import 'package:mobile_pos_cashier/core/theme/app_theme.dart';
+import 'package:mobile_pos_cashier/core/services/local_db_service.dart';
 
 // Auth
 import 'package:mobile_pos_cashier/features/auth/services/auth_service.dart';
@@ -15,26 +16,16 @@ import 'package:mobile_pos_cashier/features/pos/screens/pos_screen.dart';
 import 'package:mobile_pos_cashier/features/pos/repositories/pos_repository.dart';
 import 'package:mobile_pos_cashier/features/pos/bloc/cart_cubit.dart';
 
-// Local DB Entities
-import 'package:mobile_pos_cashier/local_db/entities/local_product.dart';
-import 'package:mobile_pos_cashier/local_db/entities/local_transaction.dart';
-
 void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Get application documents directory
-  final dir = await getApplicationDocumentsDirectory();
-
-  // Initialize Isar database
-  final isar = await Isar.open([
-    LocalProductSchema,
-    LocalTransactionSchema,
-    LocalTransactionItemSchema,
-  ], directory: dir.path);
+  // Initialize Local DB Service
+  final localDbService = LocalDbService();
+  await localDbService.init();
 
   // Run the app
-  runApp(MyApp(isar: isar));
+  runApp(MyApp(isar: localDbService.isar));
 }
 
 /// Root widget of the Lumpia POS application.
