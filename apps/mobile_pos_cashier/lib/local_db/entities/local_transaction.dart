@@ -2,37 +2,45 @@ import 'package:isar/isar.dart';
 
 part 'local_transaction.g.dart';
 
+/// Represents a transaction stored locally for offline-first capability.
 @collection
 class LocalTransaction {
   Id id = Isar.autoIncrement;
 
   @Index(unique: true)
-  late String uuid; // Generate pakai package 'uuid' [2]
+  late String transactionId;
 
-  late int branchId;
-  late int userId;
-  late DateTime transactionDate;
+  late String payload;
 
-  late double totalAmount;
-  late String paymentMethod; // 'CASH' or 'QRIS'
-  late String status; // 'DRAFT', 'PAID' [2]
+  late DateTime createdAt;
 
-  // Relasi ke Item (Isar Links)
-  final items = IsarLinks<LocalTransactionItem>();
+  bool isSynced = false;
 
-  // KUNCI OFFLINE MODE [9]
-  // 0 = Belum dikirim ke server, 1 = Sudah
-  @Index()
-  int syncStatus = 0;
-}
+  /// Creates a LocalTransaction instance.
+  LocalTransaction({
+    required this.transactionId,
+    required this.payload,
+    required this.createdAt,
+    this.isSynced = false,
+  });
 
-@collection
-class LocalTransactionItem {
-  Id id = Isar.autoIncrement;
+  /// Factory to create from Map (useful when reading raw JSON if needed, though Isar handles object storage).
+  factory LocalTransaction.fromMap(Map<String, dynamic> map) {
+    return LocalTransaction(
+      transactionId: map['transactionId'] as String,
+      payload: map['payload'] as String,
+      createdAt: DateTime.parse(map['createdAt'] as String),
+      isSynced: map['isSynced'] as bool? ?? false,
+    );
+  }
 
-  late int productId;
-  late String productName;
-  late int quantity;
-  late double priceAtTransaction; // Snapshot harga [10]
-  late double subtotal;
+  /// Converts to Map.
+  Map<String, dynamic> toMap() {
+    return {
+      'transactionId': transactionId,
+      'payload': payload,
+      'createdAt': createdAt.toIso8601String(),
+      'isSynced': isSynced,
+    };
+  }
 }

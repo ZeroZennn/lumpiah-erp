@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:mobile_pos_cashier/features/pos/bloc/cart_cubit.dart';
 import 'package:mobile_pos_cashier/local_db/entities/local_product.dart';
 import 'package:mobile_pos_cashier/features/pos/repositories/product_repository.dart';
@@ -34,13 +36,58 @@ class _PosScreenState extends State<PosScreen> {
   // Printer state
   bool _isPrinterConnected = false;
 
+  // Connectivity State
+  bool _isOffline = false;
+  int _unsyncedCount = 0;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+
   // Category list
   final List<String> _categories = ['Semua', 'Lumpia', 'Minuman', 'Paket'];
+
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialConnectivity();
+    _updateUnsyncedCount(); // Initial sync count check
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
+      _updateConnectivityStatus,
+    );
+  }
+
+  Future<void> _checkInitialConnectivity() async {
+    final result = await Connectivity().checkConnectivity();
+    _updateConnectivityStatus(result);
+  }
+
+  Future<void> _updateUnsyncedCount() async {
+    try {
+      final count = await TransactionRepository().getUnsyncedCount();
+      if (mounted) {
+        setState(() {
+          _unsyncedCount = count;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error updating unsynced count: $e');
+    }
+  }
+
+  void _updateConnectivityStatus(List<ConnectivityResult> result) {
+    setState(() {
+      _isOffline = result.contains(ConnectivityResult.none);
+    });
+
+    // If we just went online, check for unsynced data
+    if (!_isOffline) {
+      _updateUnsyncedCount();
+    }
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     _cashInputController.dispose();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
@@ -851,6 +898,9 @@ class _PosScreenState extends State<PosScreen> {
 
       setState(() => _isProcessing = false);
 
+      // Update unsynced count regardless of online/offline status
+      await _updateUnsyncedCount();
+
       if (success && context.mounted) {
         // Prepare items for receipt (printer & digital)
         final printItems = cartState.items.map((item) {
@@ -1045,11 +1095,249 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
+  /// Handle Manual Sync
+  Future<void> _handleSync(BuildContext context) async {
+    if (_isOffline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Tidak ada koneksi internet. Cek kembali koneksi Anda.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Sedang menyinkronkan data...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    try {
+      final result = await TransactionRepository().syncOfflineData();
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      if (result.containsKey('message') &&
+          result['message'] == 'No data to sync') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Semua data sudah tersinkronisasi.'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        return;
+      }
+
+      final syncedCount = result['syncedCount'] as int? ?? 0;
+      final duplicatesSkipped = result['duplicatesSkipped'] as int? ?? 0;
+
+      if (syncedCount > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sukses! $syncedCount transaksi tersinkronisasi.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (duplicatesSkipped > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Data sudah ada di server (Duplikat).'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      } else {
+        // Fallback for 0 synced 0 duplicates?
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sinkronisasi selesai.'),
+            backgroundColor: Colors.blue,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Gagal sinkronisasi: ${e.toString().replaceAll('Exception: ', '')}',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      _updateUnsyncedCount();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isTablet = _isTablet(context);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFB300).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.store, color: Color(0xFFFFB300)),
+            ),
+            const SizedBox(width: 12),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Lumpiah ERP',
+                  style: TextStyle(
+                    color: Color(0xFF2D2D2D),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+                Text(
+                  'Cashier Mode',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          // Network Connectivity Status
+          if (_isOffline)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.redAccent,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'OFFLINE',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            )
+          else
+            Container(
+              margin: const EdgeInsets.only(right: 16),
+              width: 12,
+              height: 12,
+              decoration: const BoxDecoration(
+                color: Colors.green,
+                shape: BoxShape.circle,
+              ),
+            ),
+
+          // Sync Button with Badge
+          Stack(
+            children: [
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  color: _unsyncedCount > 0
+                      ? const Color(0xFFFFB300).withOpacity(0.1)
+                      : Colors
+                            .transparent, // Less prominent if nothing to sync? Or keep consistent.
+                  // User said "If _unsyncedCount == 0: Show only the Sync Icon (maybe greyed out or standard color)."
+                  // Let's keep the background consistent or maybe remove it if 0.
+                  // I'll keep the decoration consistent for now to match other buttons.
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  icon: Icon(
+                    Icons.sync,
+                    color: _unsyncedCount > 0
+                        ? const Color(0xFFFFB300)
+                        : Colors.grey,
+                  ),
+                  onPressed: () => _handleSync(context),
+                  tooltip: 'Sinkronisasi Data',
+                ),
+              ),
+              if (_unsyncedCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: const BoxDecoration(
+                      color: Colors.red,
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      _unsyncedCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          // Printer Status
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: _isPrinterConnected
+                  ? Colors.green.withOpacity(0.1)
+                  : Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              icon: Icon(
+                _isPrinterConnected ? Icons.print : Icons.print_disabled,
+                color: _isPrinterConnected ? Colors.green : Colors.red,
+              ),
+              onPressed: () => _showPrinterSettings(context),
+              tooltip: 'Status Printer',
+            ),
+          ),
+
+          // Logout Button
+          Container(
+            margin: const EdgeInsets.only(right: 16),
+            decoration: BoxDecoration(
+              color: Colors.red.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.logout, color: Colors.red),
+              onPressed: () => _showLogoutConfirmation(context),
+              tooltip: 'Keluar',
+            ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: isTablet ? _buildTabletLayout() : _buildPhoneLayout(),
       ),
@@ -1296,23 +1584,9 @@ class _PosScreenState extends State<PosScreen> {
                 Expanded(child: _buildSearchBar()),
                 const SizedBox(width: 16),
                 // Printer setup button
-                IconButton(
-                  icon: const Icon(Icons.print),
-                  onPressed: () => _showPrinterSettings(context),
-                  tooltip: 'Pengaturan Printer',
-                  iconSize: 28,
-                  color: _isPrinterConnected
-                      ? Colors.green
-                      : const Color(0xFF2D2D2D),
-                ),
+                // REMOVING DUPLICATE BUTTON
                 // Logout button
-                IconButton(
-                  icon: const Icon(Icons.logout),
-                  onPressed: () => _showLogoutConfirmation(context),
-                  tooltip: 'Keluar',
-                  iconSize: 28,
-                  color: const Color(0xFF2D2D2D),
-                ),
+                // REMOVING DUPLICATE BUTTON
               ],
             )
           else

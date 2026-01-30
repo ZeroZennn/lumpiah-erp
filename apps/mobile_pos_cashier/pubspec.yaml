@@ -39,6 +39,7 @@ dependencies:
   isar: ^3.1.0+1
   isar_flutter_libs: ^3.1.0+1
   path_provider: ^2.1.5
+  connectivity_plus: ^6.1.0
   # Printer Thermal Bluetooth (REQ-PRT-001 [5])
   flutter_blue_plus: ^2.1.0
   flutter_esc_pos_utils: ^1.0.1

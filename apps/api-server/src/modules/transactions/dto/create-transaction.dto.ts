@@ -36,6 +36,14 @@ export class CreateTransactionDto {
   @IsNumber()
   cashReceived?: number;
 
+  @IsOptional()
+  @IsString()
+  id?: string; // UUID from offline device
+
+  @IsOptional()
+  @IsString()
+  transactionDate?: string; // ISO String from offline device
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => TransactionItemDto)
