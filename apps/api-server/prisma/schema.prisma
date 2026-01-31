@@ -162,6 +162,9 @@ model DailyClosing {
   closingDate     DateTime @map("closing_date") @db.Date
   totalCashSystem Decimal  @map("total_cash_system") @db.Decimal
   totalQrisSystem Decimal  @map("total_qris_system") @db.Decimal
+  totalCashActual Decimal  @map("total_cash_actual") @db.Decimal @default(0)
+  totalQrisActual Decimal  @map("total_qris_actual") @db.Decimal @default(0)
+  closingNote     String?  @map("closing_note")
   closedByUserId  Int      @map("closed_by_user_id")
   status          String   @default("CLOSED")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz

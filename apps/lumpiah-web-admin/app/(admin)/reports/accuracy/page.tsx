@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { branches } from "@/features/branches/data/branches.dummy";
+import { useBranches } from "@/features/branches/api/use-branches";
+import { Branch } from "@/features/branches/api/branches.types";
+import { useProductionSummary } from "@/features/dashboard/api/use-reports";
 
 import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
@@ -22,70 +25,53 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/shared/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
 
-// Dummy accuracy data
-const accuracyData = [
-    {
-        productId: 1,
-        productName: "Lumpia Kecil",
-        recommended: 165,
-        produced: 160,
-        sold: 145,
-        productionDeviation: -5,
-        salesDeviation: -15,
-        accuracy: 87.8,
-    },
-    {
-        productId: 2,
-        productName: "Lumpia Besar",
-        recommended: 88,
-        produced: 90,
-        sold: 82,
-        productionDeviation: 2,
-        salesDeviation: -8,
-        accuracy: 91.1,
-    },
-    {
-        productId: 3,
-        productName: "Lumpia Spesial",
-        recommended: 44,
-        produced: 44,
-        sold: 42,
-        productionDeviation: 0,
-        salesDeviation: -2,
-        accuracy: 95.4,
-    },
-    {
-        productId: 4,
-        productName: "Es Teh Manis",
-        recommended: 120,
-        produced: 125,
-        sold: 118,
-        productionDeviation: 5,
-        salesDeviation: -7,
-        accuracy: 94.4,
-    },
-    {
-        productId: 5,
-        productName: "Es Jeruk",
-        recommended: 60,
-        produced: 55,
-        sold: 52,
-        productionDeviation: -5,
-        salesDeviation: -3,
-        accuracy: 94.5,
-    },
-];
 
 export default function AccuracyReportPage() {
-    const activeBranches = branches.filter((b) => b.isActive);
+    const { data: branches } = useBranches();
+    const activeBranches = branches?.filter((b: Branch) => b.isActive) || [];
 
-    // Calculate averages
-    const avgAccuracy = (accuracyData.reduce((sum, d) => sum + d.accuracy, 0) / accuracyData.length).toFixed(1);
-    const totalRecommended = accuracyData.reduce((sum, d) => sum + d.recommended, 0);
-    const totalProduced = accuracyData.reduce((sum, d) => sum + d.produced, 0);
-    const totalSold = accuracyData.reduce((sum, d) => sum + d.sold, 0);
-    const waste = totalProduced - totalSold;
+    const [selectedBranch, setSelectedBranch] = useState<string>("all");
+    const { data: productionData, isLoading } = useProductionSummary(
+        selectedBranch === "all" ? "all" : Number(selectedBranch)
+    );
+
+    // Process and Aggregate data
+    const aggregatedMap = new Map<string, any>();
+
+    (productionData || []).forEach(item => {
+        const key = `${item.branchName}-${item.productName}`;
+        if (!aggregatedMap.has(key)) {
+            aggregatedMap.set(key, { ...item });
+        } else {
+            const existing = aggregatedMap.get(key);
+            existing.recommendedQty += item.recommendedQty;
+            existing.actualQty += item.actualQty;
+            // Keep other metadata from the first entry found
+        }
+    });
+
+    const processedData = Array.from(aggregatedMap.values()).map(item => {
+        const productionDeviation = item.actualQty - item.recommendedQty;
+
+        const accuracy = item.recommendedQty > 0
+            ? Math.min(100, Math.max(0, (1 - Math.abs(productionDeviation) / item.recommendedQty) * 100))
+            : 0;
+
+        return {
+            ...item,
+            productionDeviation,
+            accuracy: accuracy.toFixed(1)
+        };
+    });
+
+    // Calculate averages & totals
+    const totalRecommended = processedData.reduce((sum, d) => sum + d.recommendedQty, 0);
+    const totalProduced = processedData.reduce((sum, d) => sum + d.actualQty, 0);
+    const avgAccuracy = processedData.length > 0
+        ? (processedData.reduce((sum, d) => sum + Number(d.accuracy), 0) / processedData.length).toFixed(1)
+        : "0.0";
 
     return (
         <div className="space-y-6">
@@ -99,35 +85,38 @@ export default function AccuracyReportPage() {
                 <div className="flex-1">
                     <h1 className="text-2xl font-bold tracking-tight">Laporan Akurasi Produksi</h1>
                     <p className="text-muted-foreground">
-                        Perbandingan: Rekomendasi vs Produksi Aktual vs Penjualan
+                        Evaluasi kepatuhan produksi terhadap rekomendasi sistem (DSS)
                     </p>
                 </div>
             </div>
+
+            <Tabs defaultValue="accuracy" className="space-y-4">
+                <TabsList>
+                    <TabsTrigger value="operational" asChild>
+                        <Link href="/reports/operational">Laporan Operasional</Link>
+                    </TabsTrigger>
+                    <TabsTrigger value="comparison" asChild>
+                        <Link href="/reports">Komparasi Cabang</Link>
+                    </TabsTrigger>
+                    <TabsTrigger value="accuracy">Akurasi Produksi</TabsTrigger>
+                </TabsList>
+            </Tabs>
 
             {/* Filters */}
             <Card>
                 <CardContent className="pt-6">
                     <div className="flex flex-wrap gap-4">
-                        <Select defaultValue="1">
+                        <Select value={selectedBranch} onValueChange={setSelectedBranch}>
                             <SelectTrigger className="w-[200px]">
                                 <SelectValue placeholder="Pilih Cabang" />
                             </SelectTrigger>
                             <SelectContent>
-                                {activeBranches.map((b) => (
+                                <SelectItem value="all">Semua Cabang</SelectItem>
+                                {activeBranches.map((b: Branch) => (
                                     <SelectItem key={b.id} value={String(b.id)}>
                                         {b.name}
                                     </SelectItem>
                                 ))}
-                            </SelectContent>
-                        </Select>
-                        <Select defaultValue="today">
-                            <SelectTrigger className="w-[180px]">
-                                <SelectValue placeholder="Periode" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="today">Hari Ini</SelectItem>
-                                <SelectItem value="week">7 Hari Terakhir</SelectItem>
-                                <SelectItem value="month">30 Hari Terakhir</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>
@@ -135,29 +124,23 @@ export default function AccuracyReportPage() {
             </Card>
 
             {/* Summary Cards */}
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-3">
                 <Card>
                     <CardContent className="pt-6">
-                        <div className="text-3xl font-bold text-primary">{avgAccuracy}%</div>
-                        <p className="text-sm text-muted-foreground">Rata-rata Akurasi</p>
+                        <div className="text-3xl font-bold text-primary">{isLoading ? "..." : avgAccuracy}%</div>
+                        <p className="text-sm text-muted-foreground">Rata-rata Kepatuhan</p>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="pt-6">
-                        <div className="text-2xl font-bold">{totalRecommended}</div>
+                        <div className="text-2xl font-bold">{isLoading ? "..." : totalRecommended}</div>
                         <p className="text-sm text-muted-foreground">Total Rekomendasi</p>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="pt-6">
-                        <div className="text-2xl font-bold">{totalProduced}</div>
+                        <div className="text-2xl font-bold">{isLoading ? "..." : totalProduced}</div>
                         <p className="text-sm text-muted-foreground">Total Diproduksi</p>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="pt-6">
-                        <div className="text-2xl font-bold text-amber-600">{waste}</div>
-                        <p className="text-sm text-muted-foreground">Sisa / Waste</p>
                     </CardContent>
                 </Card>
             </div>
@@ -167,7 +150,7 @@ export default function AccuracyReportPage() {
                 <CardHeader>
                     <CardTitle>Detail Per Produk</CardTitle>
                     <CardDescription>
-                        Analisis akurasi rekomendasi DSS terhadap produksi dan penjualan aktual
+                        Selisih antara rekomendasi sistem dan realisasi produksi
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -175,20 +158,28 @@ export default function AccuracyReportPage() {
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Produk</TableHead>
+                                <TableHead>Cabang</TableHead>
                                 <TableHead className="text-right">Rekomendasi</TableHead>
                                 <TableHead className="text-right">Produksi</TableHead>
-                                <TableHead className="text-center">Dev. Produksi</TableHead>
-                                <TableHead className="text-right">Terjual</TableHead>
-                                <TableHead className="text-center">Dev. Penjualan</TableHead>
-                                <TableHead className="text-center">Akurasi</TableHead>
+                                <TableHead className="text-center">Deviasi</TableHead>
+                                <TableHead className="text-center">Akurasi (Score)</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {accuracyData.map((item) => (
-                                <TableRow key={item.productId}>
+                            {isLoading ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="text-center py-8">Loading data...</TableCell>
+                                </TableRow>
+                            ) : processedData.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Tidak ada data produksi untuk periode ini.</TableCell>
+                                </TableRow>
+                            ) : processedData.map((item) => (
+                                <TableRow key={item.planId}>
                                     <TableCell className="font-medium">{item.productName}</TableCell>
-                                    <TableCell className="text-right">{item.recommended}</TableCell>
-                                    <TableCell className="text-right font-medium">{item.produced}</TableCell>
+                                    <TableCell className="text-xs text-muted-foreground">{item.branchName}</TableCell>
+                                    <TableCell className="text-right">{item.recommendedQty}</TableCell>
+                                    <TableCell className="text-right font-medium">{item.actualQty}</TableCell>
                                     <TableCell className="text-center">
                                         <div className="flex items-center justify-center gap-1">
                                             {item.productionDeviation > 0 ? (
@@ -212,23 +203,19 @@ export default function AccuracyReportPage() {
                                             </span>
                                         </div>
                                     </TableCell>
-                                    <TableCell className="text-right font-medium">{item.sold}</TableCell>
-                                    <TableCell className="text-center">
-                                        <span className="text-red-600">{item.salesDeviation}</span>
-                                    </TableCell>
                                     <TableCell className="text-center">
                                         <Badge
                                             variant={
-                                                item.accuracy >= 95
+                                                Number(item.accuracy) >= 95
                                                     ? "default"
-                                                    : item.accuracy >= 90
+                                                    : Number(item.accuracy) >= 80
                                                         ? "secondary"
                                                         : "outline"
                                             }
                                             className={
-                                                item.accuracy >= 95
+                                                Number(item.accuracy) >= 95
                                                     ? "bg-emerald-500"
-                                                    : item.accuracy >= 90
+                                                    : Number(item.accuracy) >= 80
                                                         ? ""
                                                         : "border-amber-500 text-amber-600"
                                             }

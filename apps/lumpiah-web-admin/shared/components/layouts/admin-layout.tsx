@@ -69,7 +69,7 @@ const navGroups = [
         items: [
             { title: "Produksi", url: "/production", icon: Factory },
             { title: "Transaksi", url: "/transactions", icon: Receipt },
-            { title: "Laporan", url: "/reports", icon: FileBarChart, requiredRoles: ['Owner', 'Admin'] },
+            { title: "Laporan", url: "/reports/operational", icon: FileBarChart, requiredRoles: ['Owner', 'Admin'] },
         ],
     },
     {
