@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, MapPin, Receipt, Calendar, Plus, MoreHorizontal, Pencil, Shield, Key } from "lucide-react";
@@ -23,7 +23,8 @@ import { notify } from "@/shared/lib/notify";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 
-export default function BranchDetailPage({
+// Rename to Content
+function BranchDetailPageContent({
     params,
 }: {
     params: Promise<{ id: string }>;
@@ -103,7 +104,7 @@ export default function BranchDetailPage({
                 <div className="text-center">
                     <h2 className="text-xl font-semibold">Cabang tidak ditemukan</h2>
                     <p className="text-muted-foreground mt-1">
-                        Cabang dengan ID {id} tidak ada dalam sistem atau terjadi kesalahan.
+                        Cabang dengan ID {branchId} tidak ada dalam sistem atau terjadi kesalahan.
                     </p>
                     <Button asChild className="mt-4">
                         <Link href="/branches">Kembali ke Daftar Cabang</Link>
@@ -141,7 +142,7 @@ export default function BranchDetailPage({
                     </Button>
                 ) : (
                     <Button asChild>
-                        <Link href={`/branches/${id}?edit=true`}>Edit Cabang</Link>
+                        <Link href={`/branches/${branchId}?edit=true`}>Edit Cabang</Link>
                     </Button>
                 )}
             </div>
@@ -400,5 +401,13 @@ export default function BranchDetailPage({
                 isPending={createUserMutation.isPending || updateUserMutation.isPending}
             />
         </div>
+    );
+}
+
+export default function BranchDetailPage(props: any) {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <BranchDetailPageContent {...props} />
+        </Suspense>
     );
 }

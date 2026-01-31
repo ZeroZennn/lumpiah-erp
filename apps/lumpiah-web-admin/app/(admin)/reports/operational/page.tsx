@@ -34,7 +34,8 @@ import { AuditTrailTable } from "@/features/reports/components/audit-trail-table
 import { EodControlTable } from "@/features/reports/components/eod-control-table";
 import { ExportOperationalReportDialog } from "@/features/reports/components/export-operational-report-dialog";
 
-export default function OperationalReport() {
+// Retain the component logic but renamed
+function OperationalReportContent() {
     // URL Sync
     const router = useRouter();
     const pathname = usePathname();
@@ -341,5 +342,13 @@ export default function OperationalReport() {
                 defaultBranchId={branchId}
             />
         </div>
+    );
+}
+
+export default function OperationalReport() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <OperationalReportContent />
+        </Suspense>
     );
 }
