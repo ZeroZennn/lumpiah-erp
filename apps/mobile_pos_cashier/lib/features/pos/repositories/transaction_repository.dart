@@ -209,4 +209,91 @@ class TransactionRepository {
       await _localDb.localTransactions.put(newTransaction);
     });
   }
+
+  Future<List<Map<String, dynamic>>> getTransactions({
+    required DateTime date,
+  }) async {
+    try {
+      final token = await _authService.getToken();
+      if (token == null) {
+        throw Exception('Unauthorized');
+      }
+
+      // Format dates for startDate and endDate (beginning and end of day)
+      final startDate = DateTime(
+        date.year,
+        date.month,
+        date.day,
+      ).toIso8601String();
+      final endDate = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        23,
+        59,
+        59,
+      ).toIso8601String();
+
+      final response = await _apiClient.dio.get(
+        '/transactions',
+        queryParameters: {
+          'startDate': startDate,
+          'endDate': endDate,
+          'page': 1,
+          'limit': 100, // Reasonable limit for daily history
+        },
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data['data'] as List;
+        return data.cast<Map<String, dynamic>>();
+      } else {
+        throw Exception('Failed to fetch transactions');
+      }
+    } catch (e) {
+      // In offline mode or error, we could try to fetch from local Isar for sync pending ones,
+      // but typically history requires online. For simple implementation, just rethrow or return empty.
+      // Or checking local DB for today's transactions?
+      // For now, let's just return what we have in local if online fails, OR just throw.
+      // Requirements didn't specify offline history, so we'll likely stick to API first.
+      rethrow;
+    }
+  }
+
+  Future<bool> voidTransaction({
+    required String transactionId,
+    required String adminUsername,
+    required String adminPassword,
+    required String reason,
+  }) async {
+    try {
+      final token = await _authService.getToken();
+
+      final response = await _apiClient.dio.post(
+        '/transactions/$transactionId/void',
+        data: {
+          'adminUsername': adminUsername,
+          'adminPassword': adminPassword,
+          'reason': reason,
+        },
+        options: Options(
+          headers: {
+            'Authorization':
+                'Bearer $token', // Ensure authorized user makes request
+          },
+        ),
+      );
+
+      return response.statusCode == 200 || response.statusCode == 201;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 403) {
+        throw 'Password Admin Salah! Otorisasi gagal.';
+      }
+      if (e.response?.statusCode == 404) {
+        throw 'Admin tidak ditemukan.';
+      }
+      throw 'Gagal membatalkan transaksi.';
+    }
+  }
 }
