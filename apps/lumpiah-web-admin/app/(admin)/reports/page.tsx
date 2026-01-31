@@ -34,7 +34,7 @@ function formatCurrency(value: number): string {
     return `${(value / 1000).toFixed(0)} Rb`;
 }
 
-export default function ReportsPage() {
+function ReportsPage() {
     const [branchA, setBranchA] = useState<string>("1");
     const [branchB, setBranchB] = useState<string>("2");
 
@@ -199,5 +199,18 @@ export default function ReportsPage() {
                 </TabsContent>
             </Tabs>
         </div>
+    );
+}
+
+import { Suspense } from "react";
+import { RoleGuard } from "@/features/auth/components/role-guard";
+
+export default function ReportsPageWrapper() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <RoleGuard allowedRoles={['Admin', 'Owner']}>
+                <ReportsPage />
+            </RoleGuard>
+        </Suspense>
     );
 }

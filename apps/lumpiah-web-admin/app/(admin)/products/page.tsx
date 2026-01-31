@@ -7,9 +7,12 @@ import { useState, Suspense } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/shared/components/ui/dialog';
 import { ProductForm } from '@/features/products/components/product-form';
 import Link from 'next/link';
+import { useCurrentUser } from '@/features/auth/hooks/useCurrentUser';
 
 function Products() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const { data: user } = useCurrentUser();
+  const hasWriteAccess = user?.role.name === 'Admin' || user?.role.name === 'Owner';
 
   return (
     <div className="space-y-6">
@@ -21,31 +24,39 @@ function Products() {
               Pricing Strategy
             </Link>
           </Button>
-          <Button onClick={() => setIsCreateOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Product
-          </Button>
+          {hasWriteAccess && (
+            <Button onClick={() => setIsCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Product
+            </Button>
+          )}
         </div>
       </div>
 
       <ProductList />
 
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Product</DialogTitle>
-          </DialogHeader>
-          <ProductForm onSuccess={() => setIsCreateOpen(false)} />
-        </DialogContent>
-      </Dialog>
+      {hasWriteAccess && (
+        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create Product</DialogTitle>
+            </DialogHeader>
+            <ProductForm onSuccess={() => setIsCreateOpen(false)} />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
 
+import { RoleGuard } from '@/features/auth/components/role-guard';
+
 export default function ProductsPage() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
-      <Products />
+      <RoleGuard allowedRoles={['Admin', 'Owner']}>
+        <Products />
+      </RoleGuard>
     </Suspense>
   );
 }

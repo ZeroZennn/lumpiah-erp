@@ -9,13 +9,8 @@ import { Transaction } from '../api/transaction.types';
 import { format } from 'date-fns';
 import { Badge } from '@/shared/components/ui/badge';
 import { Separator } from '@/shared/components/ui/separator';
-import { Button } from '@/shared/components/ui/button';
-import { AlertTriangle, Printer, Trash2, WifiOff } from 'lucide-react';
-import { useState } from 'react';
-import { Textarea } from '@/shared/components/ui/textarea';
-import { Label } from '@/shared/components/ui/label';
-import { toast } from 'sonner';
-import { useVoidTransaction, useTransaction } from '../api/use-transactions';
+import { WifiOff } from 'lucide-react';
+import { useTransaction } from '../api/use-transactions';
 import { Skeleton } from "@/shared/components/ui/skeleton";
 
 interface TransactionDetailDialogProps {
@@ -25,41 +20,12 @@ interface TransactionDetailDialogProps {
 }
 
 export function TransactionDetailDialog({ transaction, isOpen, onClose }: TransactionDetailDialogProps) {
-    const { mutate: voidTransaction, isPending: isVoiding } = useVoidTransaction();
     const { data: fullTransaction, isLoading } = useTransaction(transaction?.id || '', isOpen);
 
     // Merge basic info with full info if available (fallback to transaction which is non-null here)
     const displayTransaction = fullTransaction || transaction!;
 
-    const [showVoidConfirm, setShowVoidConfirm] = useState(false);
-    const [voidReason, setVoidReason] = useState('');
-
     if (!transaction) return null; // Logic check: transaction prop is required for ID
-
-    const handleVoid = () => {
-        if (!voidReason.trim()) {
-            toast.error('Alasan void wajib diisi!');
-            return;
-        }
-
-        if (!confirm('Apakah Anda yakin ingin melakukan Force Void? Tindakan ini tidak dapat dibatalkan.')) return;
-
-        voidTransaction({ id: transaction.id, reason: voidReason }, {
-            onSuccess: () => {
-                toast.success('Transaksi berhasil di-void');
-                setShowVoidConfirm(false);
-                setVoidReason('');
-                onClose();
-            },
-            onError: (err: any) => {
-                toast.error('Gagal void: ' + err.response?.data?.message || err.message);
-            }
-        });
-    };
-
-    const handleReprint = () => {
-        toast.info('Perintah cetak dikirim ke printer kasir (Mock)');
-    };
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
@@ -163,48 +129,6 @@ export function TransactionDetailDialog({ transaction, isOpen, onClose }: Transa
                             <p className="text-red-600">Alasan: {transaction.voidReason}</p>
                         </div>
                     )}
-
-                    {/* Actions */}
-                    <div className="pt-4 space-y-3">
-                        <Button variant="outline" className="w-full" onClick={handleReprint}>
-                            <Printer className="mr-2 h-4 w-4" />
-                            Reprint Struk
-                        </Button>
-
-                        {transaction.status === 'PAID' && !showVoidConfirm && (
-                            <Button
-                                variant="destructive"
-                                className="w-full"
-                                onClick={() => setShowVoidConfirm(true)}
-                            >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Force Void
-                            </Button>
-                        )}
-
-                        {showVoidConfirm && (
-                            <div className="space-y-3 p-4 border border-destructive/50 rounded-lg bg-destructive/5">
-                                <div className="flex items-center gap-2 text-destructive font-bold text-sm">
-                                    <AlertTriangle className="h-4 w-4" />
-                                    Konfirmasi Void
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Alasan Pembatalan (Wajib)</Label>
-                                    <Textarea
-                                        placeholder="Contoh: Salah input pesanan, pelanggan komplain..."
-                                        value={voidReason}
-                                        onChange={(e) => setVoidReason(e.target.value)}
-                                    />
-                                </div>
-                                <div className="flex gap-2">
-                                    <Button variant="ghost" className="flex-1" onClick={() => setShowVoidConfirm(false)}>Batal</Button>
-                                    <Button variant="destructive" className="flex-1" onClick={handleVoid} disabled={isVoiding}>
-                                        {isVoiding ? 'Processing...' : 'Konfirmasi Void'}
-                                    </Button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
                 </div>
             </DialogContent>
         </Dialog>

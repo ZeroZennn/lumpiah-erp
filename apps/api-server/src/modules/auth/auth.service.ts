@@ -14,7 +14,10 @@ export class AuthService {
     // Find user by email and include role relation
     const user = await this.prisma.user.findUnique({
       where: { email: credentials.email },
-      include: { role: true },
+      include: {
+        role: true,
+        branch: true,
+      },
     });
 
     // Check if user exists and is active
@@ -52,9 +55,28 @@ export class AuthService {
         email: user.email,
         fullname: user.fullname,
         phoneNumber: user.phoneNumber,
-        role: user.role.name,
-        branchId: user.branchId,
+        role: user.role, // Return full role object
+        branch: user.branch, // Return full branch object
       },
     };
+  }
+
+  async getMe(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        role: true,
+        branch: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('User not found or inactive');
+    }
+
+    // Exclude passwordHash
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { passwordHash, ...result } = user;
+    return result;
   }
 }
