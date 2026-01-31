@@ -15,6 +15,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ProductsModule } from './modules/products/products.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { CategoriesModule } from './modules/categories/categories.module';
     ProductsModule,
     TransactionsModule,
     CategoriesModule,
+    AttendanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
