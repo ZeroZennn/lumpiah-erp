@@ -16,9 +16,14 @@ import 'package:mobile_pos_cashier/features/pos/screens/pos_screen.dart';
 import 'package:mobile_pos_cashier/features/pos/repositories/pos_repository.dart';
 import 'package:mobile_pos_cashier/features/pos/bloc/cart_cubit.dart';
 
+import 'package:intl/date_symbol_data_local.dart';
+
 void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize date formatting for Indonesian locale
+  await initializeDateFormatting('id_ID', null);
 
   // Initialize Local DB Service
   final localDbService = LocalDbService();

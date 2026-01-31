@@ -70,7 +70,7 @@ export class AttendanceService {
     return this.prisma.attendance.findMany({
       where: { userId },
       orderBy: { date: 'desc' },
-      take: 30, // Last 30 records
+      take: 5, // Latest 5 records
     });
   }
 }
