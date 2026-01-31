@@ -72,6 +72,7 @@ class PrinterService {
   Future<void> printReceipt({
     required Map<String, dynamic> transactionData,
     required List<Map<String, dynamic>> items,
+    bool isReprint = false,
   }) async {
     final connected = await isConnected();
     if (!connected) {
@@ -88,6 +89,16 @@ class PrinterService {
       final dateFormatter = DateFormat('dd/MM/yyyy HH:mm');
 
       // ==================== HEADER ====================
+      if (isReprint) {
+        _bluetooth.printCustom(
+          '* DUPLICATE / COPY *',
+          SIZE_LARGE,
+          ALIGN_CENTER,
+        );
+        _bluetooth.printNewLine();
+      }
+
+      // Shop name - Bold, Center, Large
       // Shop name - Bold, Center, Large
       _bluetooth.printCustom('LUMPIA SEMARANG', SIZE_EXTRA_LARGE, ALIGN_CENTER);
       _bluetooth.printNewLine();

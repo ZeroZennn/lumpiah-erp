@@ -186,6 +186,11 @@ export class TransactionsService {
         include: {
           user: { select: { fullname: true } },
           branch: { select: { name: true } },
+          transactionItems: {
+            include: {
+              product: true,
+            },
+          },
         },
       }),
       this.prisma.transaction.count({ where }),
