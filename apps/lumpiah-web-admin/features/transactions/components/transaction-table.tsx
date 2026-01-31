@@ -31,6 +31,7 @@ import { WifiOff } from "lucide-react";
 import { ExportTransactionDialog } from "./export-transaction-dialog";
 import { Input } from "@/shared/components/ui/input";
 import { useDebounce } from "@/shared/hooks/use-debounce";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 type TransactionTableProps = Record<string, never>;
 
 export function TransactionTable({ }: TransactionTableProps) {
@@ -50,6 +51,7 @@ export function TransactionTable({ }: TransactionTableProps) {
     const branchId = branchIdStr && branchIdStr !== 'all' ? Number(branchIdStr) : undefined;
     const isOfflineSyncedStr = searchParams.get('isOfflineSynced'); // 'true', 'false', or null
     const isOfflineSynced = isOfflineSyncedStr === 'true' ? true : isOfflineSyncedStr === 'false' ? false : undefined;
+    const status = searchParams.get('status') || 'all';
 
     const startDate = searchParams.get('startDate') ? new Date(searchParams.get('startDate')!) : undefined;
     const endDate = searchParams.get('endDate') ? new Date(searchParams.get('endDate')!) : undefined;
@@ -129,20 +131,32 @@ export function TransactionTable({ }: TransactionTableProps) {
         startDate,
         endDate,
         branchId,
+        status,
         isOfflineSynced,
-        search: urlSearchQuery // Pass search param to hook
+        search: urlSearchQuery
     };
 
     const summaryFilters = {
         startDate,
         endDate,
         branchId,
+        status,
         isOfflineSynced,
         search: urlSearchQuery
     };
 
-    const { data: transactionData, isLoading } = useTransactions(filters);
-    const { data: summaryData } = useTransactionSummary(summaryFilters as any);
+    const { data: user } = useCurrentUser();
+    const isPegawai = user?.role.name === 'Pegawai';
+    const userBranchId = user?.branch?.id;
+
+    const { data: transactionData, isLoading } = useTransactions({
+        ...filters,
+        branchId: isPegawai ? userBranchId : filters.branchId
+    });
+    const { data: summaryData } = useTransactionSummary({
+        ...summaryFilters,
+        branchId: isPegawai ? userBranchId : summaryFilters.branchId
+    } as any);
     const { data: branches } = useBranches();
 
     const data = transactionData?.data || [];
@@ -176,17 +190,20 @@ export function TransactionTable({ }: TransactionTableProps) {
                 header: ({ column }) => <DataTableColumnHeader column={column} title="Waktu" />,
                 cell: ({ row }) => (
                     <div className="flex flex-col">
-                        <div className="flex items-center gap-1">
-                            <span className="font-medium">
-                                {format(new Date(row.original.transactionDate), "dd MMM yyyy")}
+                        <span className="font-medium text-slate-900">
+                            {format(new Date(row.original.transactionDate), "dd MMM yyyy")}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground font-mono">
+                                {format(new Date(row.original.transactionDate), "HH:mm")}
                             </span>
                             {row.original.isOfflineSynced && (
-                                <WifiOff className="h-3 w-3 text-amber-500" />
+                                <Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-amber-50 border-amber-200 text-amber-700 gap-1 font-bold uppercase tracking-wider">
+                                    <WifiOff className="h-2.5 w-2.5" />
+                                    Offline
+                                </Badge>
                             )}
                         </div>
-                        <span className="text-[10px] text-muted-foreground">
-                            {format(new Date(row.original.transactionDate), "HH:mm")}
-                        </span>
                     </div>
                 )
             },
@@ -327,19 +344,38 @@ export function TransactionTable({ }: TransactionTableProps) {
                 </Select>
 
                 <Select
-                    value={branchIdStr || 'all'}
-                    onValueChange={(val) => updateParams({ branchId: val })}
+                    value={status || 'all'}
+                    onValueChange={(val) => updateParams({ status: val })}
                 >
                     <SelectTrigger className="w-full sm:w-[150px] h-9 bg-white">
-                        <SelectValue placeholder="Semua Cabang" />
+                        <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="all">Semua Cabang</SelectItem>
-                        {branches?.map((branch: any) => (
-                            <SelectItem key={String(branch.id)} value={String(branch.id)}>
-                                {branch.name}
-                            </SelectItem>
-                        ))}
+                        <SelectItem value="all">Semua Status</SelectItem>
+                        <SelectItem value="PAID">PAID</SelectItem>
+                        <SelectItem value="VOID">VOID</SelectItem>
+                    </SelectContent>
+                </Select>
+
+                <Select
+                    value={isPegawai ? String(userBranchId) : (branchIdStr || 'all')}
+                    onValueChange={(val) => !isPegawai && updateParams({ branchId: val })}
+                    disabled={isPegawai}
+                >
+                    <SelectTrigger className="w-full sm:w-[150px] h-9 bg-white">
+                        <SelectValue placeholder={isPegawai ? user?.branch?.name : "Semua Cabang"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {!isPegawai && <SelectItem value="all">Semua Cabang</SelectItem>}
+                        {isPegawai ? (
+                            <SelectItem value={String(userBranchId)}>{user?.branch?.name}</SelectItem>
+                        ) : (
+                            branches?.map((branch: any) => (
+                                <SelectItem key={String(branch.id)} value={String(branch.id)}>
+                                    {branch.name}
+                                </SelectItem>
+                            ))
+                        )}
                     </SelectContent>
                 </Select>
 

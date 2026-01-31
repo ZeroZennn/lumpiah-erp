@@ -2,13 +2,26 @@
  * Auth Feature Types
  */
 
+export interface Role {
+  id: number;
+  name: string;
+}
+
+export interface Branch {
+  id: number;
+  name: string;
+  address?: string;
+  isActive: boolean;
+}
+
 export interface User {
   id: number;
   email: string;
   fullname: string;
   phoneNumber: string;
-  role: string;
-  branchId: number | null;
+  role: Role;
+  branch?: Branch | null;
+  permissions?: string[];
 }
 
 export interface LoginRequest {

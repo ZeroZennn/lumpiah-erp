@@ -83,10 +83,14 @@ function Branches() {
     );
 }
 
+import { RoleGuard } from "@/features/auth/components/role-guard";
+
 export default function BranchesPage() {
     return (
         <Suspense fallback={<div className="p-8 text-center text-slate-500">Loading...</div>}>
-            <Branches />
+            <RoleGuard allowedRoles={['Admin', 'Owner']}>
+                <Branches />
+            </RoleGuard>
         </Suspense>
     );
 }

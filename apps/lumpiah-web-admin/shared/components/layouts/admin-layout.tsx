@@ -54,13 +54,14 @@ import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { useLogout } from "@/features/auth/hooks/useLogout";
 
 // Navigation items grouped by section
+// Navigation items grouped by section
 const navGroups = [
     {
         label: "OVERVIEW",
         items: [
             { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-            { title: "Cabang", url: "/branches", icon: Building2 },
-            { title: "Produk", url: "/products", icon: Package },
+            { title: "Cabang", url: "/branches", icon: Building2, requiredRoles: ['Owner', 'Admin'] },
+            { title: "Produk", url: "/products", icon: Package, requiredRoles: ['Owner', 'Admin'] },
         ],
     },
     {
@@ -68,20 +69,20 @@ const navGroups = [
         items: [
             { title: "Produksi", url: "/production", icon: Factory },
             { title: "Transaksi", url: "/transactions", icon: Receipt },
-            { title: "Laporan", url: "/reports", icon: FileBarChart },
+            { title: "Laporan", url: "/reports", icon: FileBarChart, requiredRoles: ['Owner', 'Admin'] },
         ],
     },
     {
         label: "HRM",
         items: [
-            { title: "Kehadiran", url: "/attendance", icon: ClipboardList },
+            { title: "Kehadiran", url: "/attendance", icon: ClipboardList, requiredRoles: ['Owner', 'Admin'] },
         ],
     },
     {
         label: "SISTEM",
         items: [
-            { title: "Pengguna", url: "/users", icon: UserCog },
-            { title: "Audit Log", url: "/users/audit", icon: ClipboardList },
+            { title: "Pengguna", url: "/users", icon: UserCog, requiredRoles: ['Admin', 'Owner'] },
+            { title: "Audit Log", url: "/users/audit", icon: ClipboardList, requiredRoles: ['Admin', 'Owner'] },
         ],
     },
 ];
@@ -92,9 +93,20 @@ function SidebarNav() {
     const { data: user } = useCurrentUser();
     const logoutMutation = useLogout();
 
+    const filteredNavGroups = React.useMemo(() => {
+        if (!user) return [];
+        return navGroups.map(group => ({
+            ...group,
+            items: group.items.filter(item =>
+                !item.requiredRoles || item.requiredRoles.includes(user.role.name)
+            )
+        })).filter(group => group.items.length > 0);
+    }, [user]);
+
     return (
         <>
             <SidebarHeader className="border-b border-sidebar-border bg-sidebar">
+                {/* ... existing header ... */}
                 <div className={cn(
                     "flex items-center px-2 py-3 transition-all",
                     state === "collapsed" ? "flex-col justify-center gap-4" : "justify-between gap-2"
@@ -122,7 +134,7 @@ function SidebarNav() {
             </SidebarHeader>
 
             <SidebarContent className="px-2">
-                {navGroups.map((group, groupIndex) => (
+                {filteredNavGroups.map((group, groupIndex) => (
                     <SidebarGroup key={group.label} className={groupIndex > 0 ? "pt-2" : ""}>
                         {state !== "collapsed" && (
                             <SidebarGroupLabel className="text-[10px] font-semibold text-muted-foreground/70 tracking-wider px-2 mb-1">

@@ -29,7 +29,7 @@ import {
     SelectValue,
 } from "@/shared/components/ui/select";
 
-export default function AttendancePage() {
+function AttendancePage() {
     const [branchFilter, setBranchFilter] = useState<string>("all");
     const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -192,5 +192,18 @@ export default function AttendancePage() {
                 </CardContent>
             </Card>
         </div>
+    );
+}
+
+import { Suspense } from "react";
+import { RoleGuard } from "@/features/auth/components/role-guard";
+
+export default function AttendancePageWrapper() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <RoleGuard allowedRoles={['Admin', 'Owner']}>
+                <AttendancePage />
+            </RoleGuard>
+        </Suspense>
     );
 }
