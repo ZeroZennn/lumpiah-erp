@@ -261,4 +261,44 @@ class DigitalReceiptService {
 
     return buffer.toString();
   }
+
+  /// Generate simple text receipt
+  String generateReceiptText({
+    required Map<String, dynamic> transactionData,
+    required List<Map<String, dynamic>> items,
+  }) {
+    final currencyFormatter = NumberFormat.currency(
+      locale: 'id_ID',
+      symbol: 'Rp ',
+      decimalDigits: 0,
+    );
+    final dateFormatter = DateFormat('dd/MM/yyyy HH:mm');
+
+    final date = transactionData['date'] as DateTime? ?? DateTime.now();
+    final branchName = transactionData['branchName'] ?? 'Cabang Utama';
+    final totalAmount = transactionData['totalAmount'] ?? 0.0;
+    final transactionId = transactionData['transactionId'] ?? '-';
+    final paymentMethod = transactionData['paymentMethod'] ?? 'CASH';
+
+    final buffer = StringBuffer();
+    buffer.writeln('--- STRUK PEMBELIAN ---');
+    buffer.writeln('Toko: $branchName');
+    buffer.writeln('Tanggal: ${dateFormatter.format(date)}');
+    buffer.writeln('ID: $transactionId');
+    buffer.writeln('--- ITEM ---');
+
+    for (final item in items) {
+      final qty = item['quantity'] ?? 0;
+      final name = item['productName'] ?? 'Unknown';
+      final subtotal = (qty * (item['price'] ?? 0));
+      buffer.writeln('$name x$qty = ${currencyFormatter.format(subtotal)}');
+    }
+
+    buffer.writeln('--- TOTAL ---');
+    buffer.writeln('Total: ${currencyFormatter.format(totalAmount)}');
+    buffer.writeln('Pembayaran: $paymentMethod');
+    buffer.writeln('Terima Kasih!');
+
+    return buffer.toString();
+  }
 }

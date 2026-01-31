@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../pos/repositories/transaction_repository.dart';
+import '../../../../core/services/printer_service.dart';
+import '../../../../core/services/digital_receipt_service.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
   final Map<String, dynamic> transaction;
@@ -176,6 +180,239 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     }
   }
 
+  Future<void> _handleReprint() async {
+    setState(() => _isLoading = true);
+    try {
+      final tx = widget.transaction;
+      // Convert Transaction items to format expected by PrinterService
+      final items = (tx['transactionItems'] as List<dynamic>).map((item) {
+        return {
+          'quantity': item['quantity'],
+          'productName': item['product']['name'],
+          'price': item['priceAtTransaction'],
+        };
+      }).toList();
+
+      final transactionData = {
+        'branchName': tx['branch']?['name'] ?? 'Cabang Utama',
+        'date': DateTime.parse(tx['transactionDate']).toLocal(),
+        'totalAmount': tx['totalAmount'],
+        'paymentMethod': tx['paymentMethod'],
+        'cashReceived': tx['cashReceived'],
+        'change': tx['changeAmount'],
+      };
+
+      await PrinterService().printReceipt(
+        transactionData: transactionData,
+        items: items.cast<Map<String, dynamic>>(),
+        isReprint: true,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Struk berhasil dicetak ulang'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gagal mencetak struk: Pastikan printer terhubung'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _handleShare() async {
+    print('Share button clicked'); // Debug print
+    final tx = widget.transaction;
+
+    // Convert Items
+    final rawItems = (tx['transactionItems'] as List<dynamic>?) ?? [];
+    final items = rawItems.map((item) {
+      return {
+        'quantity': item['quantity'],
+        'productName': item['product']?['name'] ?? 'Unknown',
+        'price':
+            double.tryParse((item['priceAtTransaction'] ?? 0).toString()) ?? 0,
+      };
+    }).toList();
+
+    // Convert Transaction Data
+    final transactionData = {
+      'transactionId': tx['id'],
+      'branchName': tx['branch']?['name'] ?? 'Cabang Utama',
+      'date': DateTime.parse(tx['transactionDate']).toLocal(),
+      'totalAmount': double.tryParse(tx['totalAmount'].toString()) ?? 0,
+      'paymentMethod': tx['paymentMethod'],
+      'cashReceived':
+          double.tryParse((tx['cashReceived'] ?? 0).toString()) ?? 0,
+      'change': double.tryParse((tx['changeAmount'] ?? 0).toString()) ?? 0,
+    };
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Bagikan Struk',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(Icons.picture_as_pdf, color: Colors.red),
+              title: const Text('Kirim PDF'),
+              onTap: () async {
+                Navigator.pop(context); // Close bottom sheet
+                _handleSharePdf(transactionData, items);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.chat, color: Colors.green),
+              title: const Text('Kirim WhatsApp'),
+              onTap: () {
+                Navigator.pop(context); // Close bottom sheet
+                _showWhatsAppDialog(transactionData, items);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleSharePdf(
+    Map<String, dynamic> transactionData,
+    List<Map<String, dynamic>> items,
+  ) async {
+    print('DEBUG: Share PDF clicked');
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      print('DEBUG: Generating PDF...');
+      final pdfBytes = await DigitalReceiptService().generatePdfReceipt(
+        transactionData: transactionData,
+        items: items,
+      );
+
+      print('DEBUG: Sharing PDF...');
+      await DigitalReceiptService().sharePdf(
+        pdfBytes,
+        transactionData['transactionId'].toString(),
+      );
+
+      // Dismiss loading before sharing
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      // Ensure loading is dismissed on error
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
+
+      print('DEBUG ERROR: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error sharing PDF: $e')));
+      }
+    }
+  }
+
+  void _showWhatsAppDialog(
+    Map<String, dynamic> transactionData,
+    List<Map<String, dynamic>> items,
+  ) {
+    final phoneController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Kirim ke WhatsApp'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Masukkan nomor WhatsApp tujuan (contoh: 08123456789).',
+              style: TextStyle(fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Nomor WhatsApp',
+                border: OutlineInputBorder(),
+                prefixText: '+62 ',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final phone = phoneController.text.trim();
+              if (phone.isEmpty) return;
+
+              // Format number: remove leading 0 if present
+              final formattedPhone = phone.startsWith('0')
+                  ? phone.substring(1)
+                  : phone;
+              final fullPhone = '62$formattedPhone';
+
+              final message = DigitalReceiptService().generateReceiptText(
+                transactionData: transactionData,
+                items: items,
+              );
+
+              final url = Uri.parse(
+                'https://wa.me/$fullPhone?text=${Uri.encodeComponent(message)}',
+              );
+
+              Navigator.pop(context); // Close dialog
+
+              try {
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                } else {
+                  throw 'Could not launch WhatsApp';
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error launching WhatsApp: $e')),
+                  );
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Kirim'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tx = widget.transaction;
@@ -187,7 +424,22 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
     // Based on API: transactions include transactionItems. transactionItems include product.
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Detail Transaksi'), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('Detail Transaksi'),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share),
+            tooltip: 'Bagikan Struk',
+            onPressed: status == 'PAID' ? _handleShare : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.print),
+            tooltip: 'Cetak Ulang Struk',
+            onPressed: status == 'PAID' ? _handleReprint : null,
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           Column(
