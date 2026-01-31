@@ -13,6 +13,7 @@ import 'package:mobile_pos_cashier/core/services/printer_service.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:mobile_pos_cashier/core/services/digital_receipt_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../transactions/screens/transaction_history_screen.dart';
 
 /// High-fidelity Modern POS Screen with Responsive Layout
 /// - Tablet: Side-by-side layout (Product Catalog | Cart Panel)
@@ -1249,6 +1250,27 @@ class _PosScreenState extends State<PosScreen> {
                 shape: BoxShape.circle,
               ),
             ),
+
+          // History Button
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.history, color: Colors.blue),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const TransactionHistoryScreen(),
+                  ),
+                );
+              },
+              tooltip: 'Riwayat Transaksi',
+            ),
+          ),
 
           // Sync Button with Badge
           Stack(

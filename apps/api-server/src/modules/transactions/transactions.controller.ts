@@ -78,9 +78,9 @@ export class TransactionsController {
     @Body() voidDto: VoidTransactionDto,
     @Request() req: { user: { userId: number } },
   ) {
-    return this.transactionsService.processVoid(
+    return this.transactionsService.voidTransaction(
       id,
-      voidDto.reason,
+      voidDto,
       req.user.userId,
     );
   }

@@ -1,7 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { FindAllTransactionsDto } from './dto/find-all-transactions.dto';
+import { VoidTransactionDto } from './dto/void-transaction.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -296,25 +303,54 @@ export class TransactionsService {
     return transaction;
   }
 
-  async processVoid(id: string, reason: string, userId: number) {
+  async voidTransaction(
+    id: string,
+    dto: VoidTransactionDto,
+    requesterUserId: number,
+  ) {
     const transaction = await this.findOne(id);
 
     if (transaction.status === 'VOID') {
-      throw new Error('Transaction is already voided');
+      throw new BadRequestException('Transaction is already voided');
     }
 
-    // 1. Check Daily Closing Status
+    if (transaction.status !== 'PAID') {
+      throw new BadRequestException('Only PAID transactions can be voided');
+    }
+
+    // 1. Verify Admin Credential
+    const adminUser = await this.prisma.user.findUnique({
+      where: { email: dto.adminUsername }, // Assuming username is email based on schema
+      include: { role: true },
+    });
+
+    if (!adminUser) {
+      throw new NotFoundException(
+        'Otorisasi Admin Gagal: Admin tidak ditemukan',
+      );
+    }
+
+    if (adminUser.role.name !== 'Admin' && adminUser.role.name !== 'Owner') {
+      throw new ForbiddenException('Otorisasi Admin Gagal: User bukan Admin');
+    }
+
+    const isPasswordValid = await bcrypt.compare(
+      dto.adminPassword,
+      adminUser.passwordHash,
+    );
+
+    if (!isPasswordValid) {
+      throw new ForbiddenException('Password Admin Salah');
+    }
+
+    // 2. Check Daily Closing Status
     const txDate = new Date(transaction.transactionDate);
-    // Strip time to check date only
     const dateOnly = new Date(
       txDate.getFullYear(),
       txDate.getMonth(),
       txDate.getDate(),
     );
 
-    // Check if there is a closing for this branch and date
-    // Note: Database stores closing_date as Date (check schema if it has time)
-    // Assuming closing_date is just date
     const closing = await this.prisma.dailyClosing.findFirst({
       where: {
         branchId: transaction.branchId,
@@ -329,29 +365,28 @@ export class TransactionsService {
     }
 
     return await this.prisma.$transaction(async (tx) => {
-      // 2. Restore Stock (Logic dependent on how stock is managed)
-      // Currently schema doesn't seem to have direct Product Stock table (maybe computed or external)
-      // If there was a Stock table, we would increment here.
-      // For now, we will assume we just need to mark as VOID.
-
       // 3. Update Transaction Status
       const updatedTx = await tx.transaction.update({
         where: { id },
         data: {
           status: 'VOID',
-          voidReason: reason,
+          voidReason: dto.reason,
         },
       });
 
-      // 4. Audit Log
+      // 4. Create Audit Log
       await tx.auditLog.create({
         data: {
-          userId,
+          userId: requesterUserId, // The user who initiated the request (likely cashier)
           actionType: 'VOID',
-          targetTable: 'transactions',
+          targetTable: 'Transaction',
           targetId: id,
           oldValue: { status: transaction.status } as Prisma.InputJsonValue,
-          newValue: { status: 'VOID', reason } as Prisma.InputJsonValue,
+          newValue: {
+            status: 'VOID',
+            reason: dto.reason,
+            approvedBy: adminUser.email,
+          } as Prisma.InputJsonValue,
         },
       });
 
