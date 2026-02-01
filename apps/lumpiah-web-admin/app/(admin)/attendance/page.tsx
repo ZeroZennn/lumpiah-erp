@@ -3,15 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Calendar, Filter, FileBarChart } from "lucide-react";
-import {
-    attendanceRecords,
-    formatTime,
-    getStatusColor,
-    getStatusLabel,
-} from "@/features/attendance/data/attendance.dummy";
-import { branches } from "@/features/branches/data/branches.dummy";
+import { useBranches } from "@/features/branches/api/use-branches";
+import { Branch } from "@/features/branches/api/branches.types";
 import { Button } from "@/shared/components/ui/button";
 import { Badge } from "@/shared/components/ui/badge";
+
+// Helper mocks to satisfy build until API integration
+const formatTime = (date: Date) => date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+const getStatusColor = (_status: string) => "bg-gray-500";
+const getStatusLabel = (status: string) => status;
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import {
     Table,
@@ -29,23 +29,21 @@ import {
     SelectValue,
 } from "@/shared/components/ui/select";
 
-export default function AttendancePage() {
+function AttendancePage() {
     const [branchFilter, setBranchFilter] = useState<string>("all");
     const [statusFilter, setStatusFilter] = useState<string>("all");
 
-    const activeBranches = branches.filter((b) => b.isActive);
+    const { data: branches } = useBranches();
+    const activeBranches = branches?.filter((b: Branch) => b.isActive) || [];
 
-    const filteredRecords = attendanceRecords.filter((record) => {
-        const matchesBranch = branchFilter === "all" || record.branchId === Number(branchFilter);
-        const matchesStatus = statusFilter === "all" || record.status === statusFilter;
-        return matchesBranch && matchesStatus;
-    });
+    // Placeholder until real attendance API is ready
+    const filteredRecords: any[] = [];
 
     // Calculate today's stats
-    const presentCount = filteredRecords.filter((r) => r.status === "PRESENT").length;
-    const lateCount = filteredRecords.filter((r) => r.status === "LATE").length;
-    const absentCount = filteredRecords.filter((r) => r.status === "ABSENT").length;
-    const leaveCount = filteredRecords.filter((r) => r.status === "LEAVE").length;
+    const presentCount = 0;
+    const lateCount = 0;
+    const absentCount = 0;
+    const leaveCount = 0;
 
     return (
         <div className="space-y-6">
@@ -192,5 +190,18 @@ export default function AttendancePage() {
                 </CardContent>
             </Card>
         </div>
+    );
+}
+
+import { Suspense } from "react";
+import { RoleGuard } from "@/features/auth/components/role-guard";
+
+export default function AttendancePageWrapper() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <RoleGuard allowedRoles={['Admin', 'Owner']}>
+                <AttendancePage />
+            </RoleGuard>
+        </Suspense>
     );
 }

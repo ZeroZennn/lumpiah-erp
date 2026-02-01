@@ -282,4 +282,171 @@ export class ReportsService {
       };
     });
   }
+
+  async getOperationalReport(filter: { branchId?: number; date: Date }) {
+    const startOfDay = new Date(filter.date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(filter.date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const where: Prisma.TransactionWhereInput = {
+      transactionDate: { gte: startOfDay, lte: endOfDay },
+    };
+    if (filter.branchId) {
+      where.branchId = filter.branchId;
+    }
+
+    // 1. Summary Metrics (strictly PAID)
+    const paidAgg = await this.prisma.transaction.aggregate({
+      where: { ...where, status: 'PAID' },
+      _sum: { totalAmount: true },
+      _count: { id: true },
+    });
+
+    const netRevenue = Number(paidAgg._sum.totalAmount || 0);
+    const transactionCount = paidAgg._count.id;
+    const avgBasket = transactionCount > 0 ? netRevenue / transactionCount : 0;
+
+    // 2. Payment Method Split (system counts)
+    const paymentMethods = await this.prisma.transaction.groupBy({
+      by: ['paymentMethod'],
+      where: { ...where, status: 'PAID' },
+      _sum: { totalAmount: true },
+    });
+
+    const totalCashSystem = Number(
+      paymentMethods.find((pm) => pm.paymentMethod === 'CASH')?._sum
+        .totalAmount || 0,
+    );
+    const totalQrisSystem = Number(
+      paymentMethods.find((pm) => pm.paymentMethod === 'QRIS')?._sum
+        .totalAmount || 0,
+    );
+
+    // 3. EOD Control (Daily Closings)
+    const branches = await this.prisma.branch.findMany({
+      where: {
+        isActive: true,
+        ...(filter.branchId ? { id: filter.branchId } : {}),
+      },
+      include: {
+        dailyClosings: {
+          where: {
+            closingDate: { gte: startOfDay, lte: endOfDay },
+          },
+        },
+      },
+    });
+
+    const eodControl = branches.map((branch) => {
+      const closing = branch.dailyClosings[0];
+      const cashVariance = closing
+        ? Number(closing.totalCashSystem) - Number(closing.totalCashActual)
+        : 0;
+      const qrisVariance = closing
+        ? Number(closing.totalQrisSystem) - Number(closing.totalQrisActual)
+        : 0;
+
+      return {
+        branchId: branch.id,
+        branchName: branch.name,
+        status: closing ? 'CLOSED' : 'OPEN',
+        closingTime: closing?.createdAt || null,
+        totalCashSystem: Number(closing?.totalCashSystem || 0),
+        totalCashActual: Number(closing?.totalCashActual || 0),
+        cashVariance,
+        totalQrisSystem: Number(closing?.totalQrisSystem || 0),
+        totalQrisActual: Number(closing?.totalQrisActual || 0),
+        qrisVariance,
+        closingNote: (closing?.closingNote as string) || null,
+      };
+    });
+
+    // 4. Item Breakdown (Best Sellers)
+    // Using findMany instead of groupBy because we need to join with product and category
+    const items = await this.prisma.transactionItem.findMany({
+      where: {
+        transaction: {
+          ...where,
+          status: 'PAID',
+        },
+      },
+      include: {
+        product: {
+          include: {
+            category: true,
+          },
+        },
+      },
+    });
+
+    const breakdownMap = new Map<
+      number,
+      {
+        productId: number;
+        productName: string;
+        categoryName: string;
+        qtySold: number;
+        totalValue: number;
+      }
+    >();
+
+    items.forEach((item) => {
+      const existing = breakdownMap.get(item.productId);
+      if (existing) {
+        existing.qtySold += item.quantity;
+        existing.totalValue += Number(item.subtotal);
+      } else {
+        breakdownMap.set(item.productId, {
+          productId: item.productId,
+          productName: item.product.name,
+          categoryName: item.product.category.name,
+          qtySold: item.quantity,
+          totalValue: Number(item.subtotal),
+        });
+      }
+    });
+
+    const itemBreakdown = Array.from(breakdownMap.values()).sort(
+      (a, b) => b.qtySold - a.qtySold,
+    );
+
+    // 5. Audit Trail (VOID Transactions)
+    const voidTransactions = await this.prisma.transaction.findMany({
+      where: { ...where, status: 'VOID' },
+      include: {
+        user: { select: { fullname: true } },
+      },
+      orderBy: { transactionDate: 'desc' },
+    });
+
+    const voidTrail = voidTransactions.map((tx) => ({
+      transactionId: tx.id,
+      transactionDate: tx.transactionDate,
+      cashierName: tx.user.fullname,
+      totalAmount: Number(tx.totalAmount),
+      voidReason: tx.voidReason,
+    }));
+
+    const totalVoidValue = voidTrail.reduce(
+      (sum, tx) => sum + tx.totalAmount,
+      0,
+    );
+
+    return {
+      summary: {
+        netRevenue,
+        transactionCount,
+        avgBasket,
+        totalCashSystem,
+        totalQrisSystem,
+      },
+      eodControl,
+      itemBreakdown,
+      auditTrail: {
+        voidTransactions: voidTrail,
+        totalVoidValue,
+      },
+    };
+  }
 }

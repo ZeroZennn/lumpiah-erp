@@ -1,5 +1,8 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ReportsService } from './reports.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('reports')
 export class ReportsController {
@@ -55,6 +58,19 @@ export class ReportsController {
     @Query('date') date?: string,
   ) {
     return this.reportsService.getProductionSummary({
+      branchId: branchId ? Number(branchId) : undefined,
+      date: date ? new Date(date) : new Date(),
+    });
+  }
+
+  @Get('operational')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin', 'Owner')
+  async getOperationalReport(
+    @Query('branchId') branchId?: string,
+    @Query('date') date?: string,
+  ) {
+    return this.reportsService.getOperationalReport({
       branchId: branchId ? Number(branchId) : undefined,
       date: date ? new Date(date) : new Date(),
     });

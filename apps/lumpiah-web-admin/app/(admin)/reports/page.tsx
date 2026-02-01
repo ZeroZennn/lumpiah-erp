@@ -1,10 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { format, subDays } from "date-fns";
+import { DateRange } from "react-day-picker";
 import Link from "next/link";
 import { FileBarChart } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from "recharts";
-import { branches } from "@/features/branches/data/branches.dummy";
+import { useBranches } from "@/features/branches/api/use-branches";
+import { Branch } from "@/features/branches/api/branches.types";
+import { useRevenueTrend } from "@/features/dashboard/api/use-reports";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import {
@@ -15,17 +19,9 @@ import {
     SelectValue,
 } from "@/shared/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/components/ui/tabs";
+import { DateRangePicker } from "@/shared/components/ui/date-range-picker";
 
-// Dummy comparison data
-const comparisonData = [
-    { date: "23 Jan", branchA: 2100000, branchB: 1500000 },
-    { date: "24 Jan", branchA: 2800000, branchB: 1800000 },
-    { date: "25 Jan", branchA: 2400000, branchB: 1650000 },
-    { date: "26 Jan", branchA: 3200000, branchB: 2100000 },
-    { date: "27 Jan", branchA: 2900000, branchB: 1900000 },
-    { date: "28 Jan", branchA: 2750000, branchB: 1750000 },
-    { date: "29 Jan", branchA: 2750000, branchB: 1450000 },
-];
+
 
 function formatCurrency(value: number): string {
     if (value >= 1000000) {
@@ -34,19 +30,48 @@ function formatCurrency(value: number): string {
     return `${(value / 1000).toFixed(0)} Rb`;
 }
 
-export default function ReportsPage() {
+function ReportsPage() {
     const [branchA, setBranchA] = useState<string>("1");
     const [branchB, setBranchB] = useState<string>("2");
+    const [dateRange, setDateRange] = useState<DateRange | undefined>({
+        from: subDays(new Date(), 7),
+        to: new Date()
+    });
 
-    const activeBranches = branches.filter((b) => b.isActive);
+    const { data: branches } = useBranches();
+    const activeBranches = branches?.filter((b: Branch) => b.isActive) || [];
     const branchAName = activeBranches.find((b) => b.id === Number(branchA))?.name || "";
     const branchBName = activeBranches.find((b) => b.id === Number(branchB))?.name || "";
 
-    // Calculate totals
-    const totalA = comparisonData.reduce((sum, d) => sum + d.branchA, 0);
-    const totalB = comparisonData.reduce((sum, d) => sum + d.branchB, 0);
+    // Queries for Branch A
+    const { data: trendA } = useRevenueTrend({
+        branchId: Number(branchA),
+        startDate: dateRange?.from,
+        endDate: dateRange?.to
+    });
+
+    // Queries for Branch B
+    const { data: trendB } = useRevenueTrend({
+        branchId: Number(branchB),
+        startDate: dateRange?.from,
+        endDate: dateRange?.to
+    });
+
+    // Merge data for chart
+    const comparisonData = (trendA || []).map((item, index) => {
+        const itemB = trendB?.[index];
+        return {
+            date: format(new Date(item.date), 'dd MMM'),
+            originalDate: item.date,
+            branchA: item.revenue,
+            branchB: itemB?.revenue || 0
+        };
+    });
+
+    const totalA = (trendA || []).reduce((sum, d) => sum + d.revenue, 0);
+    const totalB = (trendB || []).reduce((sum, d) => sum + d.revenue, 0);
     const difference = totalA - totalB;
-    const percentageDiff = ((difference / totalB) * 100).toFixed(1);
+    const percentageDiff = totalB > 0 ? ((difference / totalB) * 100).toFixed(1) : "0";
 
     return (
         <div className="space-y-6">
@@ -58,12 +83,24 @@ export default function ReportsPage() {
                         Analisis dan perbandingan data
                     </p>
                 </div>
+                <div className="flex items-center gap-2">
+                    <DateRangePicker
+                        date={dateRange}
+                        onDateChange={setDateRange}
+                        className="w-[260px]"
+                    />
+                </div>
             </div>
 
             <Tabs defaultValue="comparison" className="space-y-4">
                 <TabsList>
-                    <TabsTrigger value="comparison">Komparasi Cabang</TabsTrigger>
-                    <TabsTrigger value="accuracy">
+                    <TabsTrigger value="operational" asChild>
+                        <Link href="/reports/operational">Laporan Operasional</Link>
+                    </TabsTrigger>
+                    <TabsTrigger value="comparison" asChild>
+                        <Link href="/reports">Komparasi Cabang</Link>
+                    </TabsTrigger>
+                    <TabsTrigger value="accuracy" asChild>
                         <Link href="/reports/accuracy">Akurasi Produksi</Link>
                     </TabsTrigger>
                 </TabsList>
@@ -122,7 +159,7 @@ export default function ReportsPage() {
                                 <div className="text-2xl font-bold text-primary">
                                     Rp {formatCurrency(totalA)}
                                 </div>
-                                <p className="text-xs text-muted-foreground">Total 7 hari</p>
+                                <p className="text-xs text-muted-foreground">Total Pendapatan</p>
                             </CardContent>
                         </Card>
                         <Card>
@@ -131,7 +168,7 @@ export default function ReportsPage() {
                                 <div className="text-2xl font-bold text-blue-600">
                                     Rp {formatCurrency(totalB)}
                                 </div>
-                                <p className="text-xs text-muted-foreground">Total 7 hari</p>
+                                <p className="text-xs text-muted-foreground">Total Pendapatan</p>
                             </CardContent>
                         </Card>
                         <Card>
@@ -151,7 +188,9 @@ export default function ReportsPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle>Perbandingan Pendapatan Harian</CardTitle>
-                            <CardDescription>7 hari terakhir</CardDescription>
+                            <CardDescription>
+                                {dateRange?.from ? format(dateRange.from, 'dd MMM') : '-'} s/d {dateRange?.to ? format(dateRange.to, 'dd MMM') : '-'}
+                            </CardDescription>
                         </CardHeader>
                         <CardContent>
                             <div className="h-[350px]">
@@ -199,5 +238,18 @@ export default function ReportsPage() {
                 </TabsContent>
             </Tabs>
         </div>
+    );
+}
+
+import { Suspense } from "react";
+import { RoleGuard } from "@/features/auth/components/role-guard";
+
+export default function ReportsPageWrapper() {
+    return (
+        <Suspense fallback={<div>Loading...</div>}>
+            <RoleGuard allowedRoles={['Admin', 'Owner']}>
+                <ReportsPage />
+            </RoleGuard>
+        </Suspense>
     );
 }

@@ -242,8 +242,9 @@ export class TransactionsService {
   }
 
   async getSummary(query: FindAllTransactionsDto) {
-    const { branchId, startDate, endDate, search, isOfflineSynced } = query;
-    // Reuse filter logic (extract logic to private method if possible, but for now duplicate the `where` construction for safety)
+    const { branchId, startDate, endDate, status, search, isOfflineSynced } =
+      query;
+    // Reuse filter logic
     const where: Prisma.TransactionWhereInput = {};
 
     if (branchId) where.branchId = branchId;
@@ -263,6 +264,10 @@ export class TransactionsService {
       };
     }
 
+    if (status && status !== 'all') {
+      where.status = status;
+    }
+
     if (search) {
       where.OR = [
         { id: { contains: search, mode: 'insensitive' } },
@@ -271,15 +276,23 @@ export class TransactionsService {
     }
 
     // Total Revenue (PAID only)
+    // If user filtered specifically for VOID, revenue should be 0
     const revenueAgg = await this.prisma.transaction.aggregate({
-      where: { ...where, status: 'PAID' },
+      where: {
+        ...where,
+        status: status === 'VOID' ? 'NONE' : 'PAID',
+      },
       _sum: { totalAmount: true },
       _count: { id: true },
     });
 
     // Void Stats
+    // If user filtered specifically for PAID, void stats should be 0
     const voidAgg = await this.prisma.transaction.aggregate({
-      where: { ...where, status: 'VOID' },
+      where: {
+        ...where,
+        status: status === 'PAID' ? 'NONE' : 'VOID',
+      },
       _sum: { totalAmount: true },
       _count: { id: true },
     });

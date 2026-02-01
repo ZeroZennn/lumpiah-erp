@@ -11,6 +11,7 @@ import { useBranches } from "@/features/branches/api/use-branches";
 import { UserDialog, type UserFormValues } from "@/features/users/components/UserDialog";
 import { notify } from "@/shared/lib/notify";
 import { User } from "@/features/users/api/users.types";
+import { RoleGuard } from "@/features/auth/components/role-guard";
 
 function Users() {
     const { data: users = [], isLoading: usersLoading } = useUsers();
@@ -174,7 +175,9 @@ function Users() {
 export default function UsersPage() {
     return (
         <Suspense fallback={<div className="p-8 text-center text-slate-500">Loading...</div>}>
-            <Users />
+            <RoleGuard allowedRoles={['Admin', 'Owner']}>
+                <Users />
+            </RoleGuard>
         </Suspense>
     );
 }

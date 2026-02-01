@@ -10,10 +10,10 @@ import { Button } from "@/shared/components/ui/button";
 import { DataTable } from '@/shared/components/ui/data-table';
 import { DataTableColumnHeader } from '@/shared/components/ui/data-table-column-header';
 import { Badge } from "@/shared/components/ui/badge";
-import { Eye, Download, Loader2, Search, X } from "lucide-react";
+import { Eye, Loader2, Search, X, FileSpreadsheet } from "lucide-react";
 import { TransactionDetailDialog } from "./transaction-detail-sheet";
 import { toast } from "sonner";
-import { useExportTransactions, useTransactions } from "../api/use-transactions";
+import { useTransactions } from "../api/use-transactions";
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import {
     Select,
@@ -28,15 +28,20 @@ import { DateRangePicker } from "@/shared/components/ui/date-range-picker";
 import { DateRange } from "react-day-picker";
 import { useTransactionSummary } from "../api/use-transactions";
 import { WifiOff } from "lucide-react";
-import { ExportTransactionDialog } from "./export-transaction-dialog";
 import { Input } from "@/shared/components/ui/input";
 import { useDebounce } from "@/shared/hooks/use-debounce";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
+import { apiClient } from "@/shared/lib/api-client";
+import * as XLSX from 'xlsx';
+import { ExportTransactionDialog } from "./export-transaction-dialog";
+
 type TransactionTableProps = Record<string, never>;
 
 export function TransactionTable({ }: TransactionTableProps) {
     const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
 
     // URL Sync
     const router = useRouter();
@@ -50,6 +55,7 @@ export function TransactionTable({ }: TransactionTableProps) {
     const branchId = branchIdStr && branchIdStr !== 'all' ? Number(branchIdStr) : undefined;
     const isOfflineSyncedStr = searchParams.get('isOfflineSynced'); // 'true', 'false', or null
     const isOfflineSynced = isOfflineSyncedStr === 'true' ? true : isOfflineSyncedStr === 'false' ? false : undefined;
+    const status = searchParams.get('status') || 'all';
 
     const startDate = searchParams.get('startDate') ? new Date(searchParams.get('startDate')!) : undefined;
     const endDate = searchParams.get('endDate') ? new Date(searchParams.get('endDate')!) : undefined;
@@ -129,45 +135,110 @@ export function TransactionTable({ }: TransactionTableProps) {
         startDate,
         endDate,
         branchId,
+        status,
         isOfflineSynced,
-        search: urlSearchQuery // Pass search param to hook
+        search: urlSearchQuery
     };
 
     const summaryFilters = {
         startDate,
         endDate,
         branchId,
+        status,
         isOfflineSynced,
         search: urlSearchQuery
     };
 
-    const { data: transactionData, isLoading } = useTransactions(filters);
-    const { data: summaryData } = useTransactionSummary(summaryFilters as any);
+    const { data: user } = useCurrentUser();
+    const isPegawai = user?.role.name === 'Pegawai';
+    const userBranchId = user?.branch?.id;
+
+    const { data: transactionData, isLoading } = useTransactions({
+        ...filters,
+        branchId: isPegawai ? userBranchId : filters.branchId
+    });
+    const { data: summaryData } = useTransactionSummary({
+        ...summaryFilters,
+        branchId: isPegawai ? userBranchId : summaryFilters.branchId
+    } as any);
     const { data: branches } = useBranches();
 
     const data = transactionData?.data || [];
 
-    const { mutate: exportData, isPending: isExporting } = useExportTransactions();
+    const handleExport = async (exportFilters: { startDate?: Date; endDate?: Date; branchId?: number }) => {
+        try {
+            setIsExporting(true);
 
-    const handleExport = useCallback((exportFilters: any) => {
-        exportData(exportFilters, {
-            onSuccess: (data) => {
-                // Create download link
-                const url = window.URL.createObjectURL(new Blob([data as any]));
-                const link = document.createElement('a');
-                link.href = url;
-                link.setAttribute('download', `transactions-${format(new Date(), 'yyyy-MM-dd')}.csv`);
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                toast.success("Export berhasil!");
-                setIsExportDialogOpen(false);
-            },
-            onError: () => {
-                toast.error("Gagal export data");
+            // Build export params using logic identical to filters but without pagination
+            const exportParams: any = {
+                limit: 10000, // Fetch up to 10k rows
+                page: 1,
+            };
+
+            if (exportFilters.branchId) exportParams.branchId = exportFilters.branchId;
+            if (isPegawai) exportParams.branchId = userBranchId; // Enforce security
+
+            if (filters.status && filters.status !== 'all') exportParams.status = filters.status;
+            if (filters.search) exportParams.search = filters.search;
+            if (filters.isOfflineSynced !== undefined) exportParams.isOfflineSynced = String(filters.isOfflineSynced);
+
+            // Use the dates from the Dialog, not the URL
+            if (exportFilters.startDate) exportParams.startDate = format(exportFilters.startDate, 'yyyy-MM-dd');
+            // Ensure endDate covers the full day by appending time
+            if (exportFilters.endDate) exportParams.endDate = format(exportFilters.endDate, 'yyyy-MM-dd') + 'T23:59:59';
+
+            const response = await apiClient.get<any>('/transactions', { params: exportParams });
+            // API Client returns the body directly. For /transactions, the body is { data: [...], meta: ... }
+            // So response object IS the { data, meta } object.
+            // valid data is in response.data
+            const allTransactions: Transaction[] = response.data || [];
+
+            if (allTransactions.length === 0) {
+                toast.error("Tidak ada data untuk diexport");
+                return;
             }
-        });
-    }, [exportData]);
+
+            // Create Excel
+            const wb = XLSX.utils.book_new();
+
+            const rows = allTransactions.map(t => ({
+                "ID Transaksi": t.id,
+                "Waktu": format(new Date(t.transactionDate), "yyyy-MM-dd HH:mm:ss"),
+                "Cabang": t.branch.name,
+                "Kasir": t.user.fullname,
+                "Total Bayar": t.totalAmount,
+                "Metode": t.paymentMethod,
+                "Status": t.status,
+                "Offline": t.isOfflineSynced ? "Yes" : "No"
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(rows);
+
+            // Auto-width columns
+            const wscols = [
+                { wch: 20 }, // ID
+                { wch: 20 }, // Waktu
+                { wch: 15 }, // Cabang
+                { wch: 20 }, // Kasir
+                { wch: 15 }, // Total
+                { wch: 10 }, // Metode
+                { wch: 10 }, // Status
+                { wch: 10 }, // Offline
+            ];
+            ws['!cols'] = wscols;
+
+            XLSX.utils.book_append_sheet(wb, ws, "Transaksi");
+            XLSX.writeFile(wb, `Transaksi-${format(new Date(), "yyyy-MM-dd-HHmmss")}.xlsx`);
+
+            toast.success(`Berhasil mengexport ${rows.length} data`);
+            setIsExportDialogOpen(false);
+        } catch (error) {
+            console.error(error);
+            toast.error("Gagal export data");
+        } finally {
+            setIsExporting(false);
+        }
+    };
 
     const columns: ColumnDef<Transaction>[] = useMemo(
         () => [
@@ -176,17 +247,20 @@ export function TransactionTable({ }: TransactionTableProps) {
                 header: ({ column }) => <DataTableColumnHeader column={column} title="Waktu" />,
                 cell: ({ row }) => (
                     <div className="flex flex-col">
-                        <div className="flex items-center gap-1">
-                            <span className="font-medium">
-                                {format(new Date(row.original.transactionDate), "dd MMM yyyy")}
+                        <span className="font-medium text-slate-900">
+                            {format(new Date(row.original.transactionDate), "dd MMM yyyy")}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground font-mono">
+                                {format(new Date(row.original.transactionDate), "HH:mm")}
                             </span>
                             {row.original.isOfflineSynced && (
-                                <WifiOff className="h-3 w-3 text-amber-500" />
+                                <Badge variant="outline" className="h-4 px-1.5 text-[9px] bg-amber-50 border-amber-200 text-amber-700 gap-1 font-bold uppercase tracking-wider">
+                                    <WifiOff className="h-2.5 w-2.5" />
+                                    Offline
+                                </Badge>
                             )}
                         </div>
-                        <span className="text-[10px] text-muted-foreground">
-                            {format(new Date(row.original.transactionDate), "HH:mm")}
-                        </span>
                     </div>
                 )
             },
@@ -327,25 +401,44 @@ export function TransactionTable({ }: TransactionTableProps) {
                 </Select>
 
                 <Select
-                    value={branchIdStr || 'all'}
-                    onValueChange={(val) => updateParams({ branchId: val })}
+                    value={status || 'all'}
+                    onValueChange={(val) => updateParams({ status: val })}
                 >
                     <SelectTrigger className="w-full sm:w-[150px] h-9 bg-white">
-                        <SelectValue placeholder="Semua Cabang" />
+                        <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="all">Semua Cabang</SelectItem>
-                        {branches?.map((branch: any) => (
-                            <SelectItem key={String(branch.id)} value={String(branch.id)}>
-                                {branch.name}
-                            </SelectItem>
-                        ))}
+                        <SelectItem value="all">Semua Status</SelectItem>
+                        <SelectItem value="PAID">PAID</SelectItem>
+                        <SelectItem value="VOID">VOID</SelectItem>
                     </SelectContent>
                 </Select>
 
-                <Button variant="outline" size="sm" onClick={() => setIsExportDialogOpen(true)} disabled={isExporting} className="bg-white ml-auto sm:ml-0">
-                    {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-                    Export
+                <Select
+                    value={isPegawai ? String(userBranchId) : (branchIdStr || 'all')}
+                    onValueChange={(val) => !isPegawai && updateParams({ branchId: val })}
+                    disabled={isPegawai}
+                >
+                    <SelectTrigger className="w-full sm:w-[150px] h-9 bg-white">
+                        <SelectValue placeholder={isPegawai ? user?.branch?.name : "Semua Cabang"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {!isPegawai && <SelectItem value="all">Semua Cabang</SelectItem>}
+                        {isPegawai ? (
+                            <SelectItem value={String(userBranchId)}>{user?.branch?.name}</SelectItem>
+                        ) : (
+                            branches?.map((branch: any) => (
+                                <SelectItem key={String(branch.id)} value={String(branch.id)}>
+                                    {branch.name}
+                                </SelectItem>
+                            ))
+                        )}
+                    </SelectContent>
+                </Select>
+
+                <Button variant="outline" size="sm" onClick={() => setIsExportDialogOpen(true)} disabled={isExporting} className="bg-white ml-auto sm:ml-0 gap-2">
+                    {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 text-emerald-600" />}
+                    Export XLSX
                 </Button>
             </div>
         </div>
