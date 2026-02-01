@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { ArrowLeft, Database } from "lucide-react";
+import { ArrowLeft, Database, Loader2 } from "lucide-react";
 import { Button } from "@/shared/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/shared/components/ui/card";
 import { AuditLogFilters } from "@/features/audit-logs/components/audit-log-filters";
@@ -11,7 +11,7 @@ import { AuditLogTable } from "@/features/audit-logs/components/audit-log-table"
 import { useAuditLogs } from "@/features/audit-logs/api/use-audit-logs";
 import { useUsers } from "@/features/users/api/use-users";
 
-export default function AuditLogPage() {
+function AuditLogContent() {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -101,5 +101,17 @@ export default function AuditLogPage() {
                 </CardContent>
             </Card>
         </div>
+    );
+}
+
+export default function AuditLogPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex h-[400px] w-full items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        }>
+            <AuditLogContent />
+        </Suspense>
     );
 }
