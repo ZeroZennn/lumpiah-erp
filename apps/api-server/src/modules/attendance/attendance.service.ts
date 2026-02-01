@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client';
 import { GetAttendanceRecapDto } from './dto/get-attendance-recap.dto';
 import { UpdateAttendanceDto } from './dto/update-attendance.dto';
 
-interface AttendanceRecapItem {
+export interface AttendanceRecapItem {
   userId: number;
   userName: string;
   branchName: string;
