@@ -16,6 +16,7 @@ import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { FindAllTransactionsDto } from './dto/find-all-transactions.dto';
 import { VoidTransactionDto } from './dto/void-transaction.dto';
+import { CreateDailyClosingDto } from './dto/create-daily-closing.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Controller('transactions')
@@ -83,6 +84,19 @@ export class TransactionsController {
       voidDto,
       req.user.userId,
     );
+  }
+
+  @Get('daily-closing/preview')
+  getDailyClosingPreview(@Request() req: { user: { branchId: number } }) {
+    return this.transactionsService.getDailyClosingPreview(req.user);
+  }
+
+  @Post('daily-closing')
+  createDailyClosing(
+    @Body() dto: CreateDailyClosingDto,
+    @Request() req: { user: { userId: number; branchId: number } },
+  ) {
+    return this.transactionsService.createDailyClosing(req.user, dto);
   }
 
   @Post(':id/reject-void')

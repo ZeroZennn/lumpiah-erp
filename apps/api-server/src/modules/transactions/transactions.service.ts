@@ -9,6 +9,7 @@ import * as bcrypt from 'bcrypt';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { FindAllTransactionsDto } from './dto/find-all-transactions.dto';
 import { VoidTransactionDto } from './dto/void-transaction.dto';
+import { CreateDailyClosingDto } from './dto/create-daily-closing.dto';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -44,6 +45,24 @@ export class TransactionsService {
     userId: number,
     branchId: number,
   ) {
+    // 1. Check if Daily Closing has been performed for today
+    const today = new Date();
+    const dateOnly = new Date(today.setHours(0, 0, 0, 0));
+
+    const dailyClosing = await this.prisma.dailyClosing.findFirst({
+      where: {
+        branchId: branchId,
+        closingDate: dateOnly,
+      },
+    });
+
+    if (dailyClosing) {
+      throw new BadRequestException(
+        'Kas hari ini sudah ditutup. Tidak bisa membuat transaksi baru.',
+      );
+    }
+
+    // 2. Create Transaction
     const transaction = await this.prisma.transaction.create({
       data: {
         // Use connect for relations
@@ -425,6 +444,103 @@ export class TransactionsService {
         status: 'PAID', // Revert to paid usually
         voidReason: null, // Clear reason or keep as history? Better clean for logic sake or keep in separate log
       },
+    });
+  }
+
+  // --- Daily Closing Features ---
+
+  async getDailyClosingPreview(user: { branchId: number }) {
+    if (!user.branchId) {
+      throw new BadRequestException('User does not belong to any branch');
+    }
+
+    const today = new Date();
+    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+
+    // 1. Check if already closed
+    // Re-create startOfDay for dateOnly ensuring 00:00:00
+    const dateOnly = new Date(new Date().setHours(0, 0, 0, 0));
+
+    const existingClosing = await this.prisma.dailyClosing.findFirst({
+      where: {
+        branchId: user.branchId,
+        closingDate: dateOnly,
+      },
+    });
+
+    // Aggregate Transactions for Today
+    const aggregations = await this.prisma.transaction.groupBy({
+      by: ['paymentMethod'],
+      where: {
+        branchId: user.branchId,
+        status: 'PAID',
+        transactionDate: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+      },
+      _sum: {
+        totalAmount: true,
+      },
+    });
+
+    const systemCash =
+      aggregations.find((a) => a.paymentMethod === 'CASH')?._sum.totalAmount ||
+      0;
+    const systemQris =
+      aggregations.find((a) => a.paymentMethod === 'QRIS')?._sum.totalAmount ||
+      0;
+
+    return {
+      systemCash: Number(systemCash),
+      systemQris: Number(systemQris),
+      isClosed: !!existingClosing,
+      closingData: existingClosing,
+    };
+  }
+
+  async createDailyClosing(
+    user: { userId: number; branchId: number },
+    dto: CreateDailyClosingDto,
+  ) {
+    if (!user.branchId) {
+      throw new BadRequestException('User does not belong to any branch');
+    }
+
+    const today = new Date();
+    const dateOnly = new Date(today.setHours(0, 0, 0, 0)); // Normalized date for 'closingDate'
+
+    // 1. Check if already closed
+    const existingClosing = await this.prisma.dailyClosing.findFirst({
+      where: {
+        branchId: user.branchId,
+        closingDate: dateOnly,
+      },
+    });
+
+    if (existingClosing) {
+      throw new BadRequestException(
+        'Closing harian sudah dilakukan untuk hari ini.',
+      );
+    }
+
+    // 2. Calculate System Totals
+    const preview = await this.getDailyClosingPreview(user);
+
+    // 3. Create Daily Closing Record
+    return this.prisma.dailyClosing.create({
+      data: {
+        branch: { connect: { id: user.branchId } },
+        closedBy: { connect: { id: user.userId } },
+        closingDate: dateOnly,
+        totalCashSystem: preview.systemCash,
+        totalQrisSystem: preview.systemQris,
+        totalCashActual: dto.totalCashActual,
+        totalQrisActual: dto.totalQrisActual,
+        closingNote: dto.closingNote,
+        status: 'CLOSED',
+      } as unknown as Prisma.DailyClosingCreateInput,
     });
   }
 }

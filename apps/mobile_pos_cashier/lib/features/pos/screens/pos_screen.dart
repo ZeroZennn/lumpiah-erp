@@ -16,6 +16,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:mobile_pos_cashier/features/attendance/screens/attendance_screen.dart';
 import '../../attendance/repositories/attendance_repository.dart';
 import '../../transactions/screens/transaction_history_screen.dart';
+import '../../daily_closing/screens/daily_closing_screen.dart';
+import '../../daily_closing/repositories/closing_repository.dart';
 
 /// High-fidelity Modern POS Screen with Responsive Layout
 /// - Tablet: Side-by-side layout (Product Catalog | Cart Panel)
@@ -51,15 +53,40 @@ class _PosScreenState extends State<PosScreen> {
   bool _hasCheckedIn = true; // Default to true to hide badge initially
   final AttendanceRepository _attendanceRepository = AttendanceRepository();
 
+  // Closing State
+  bool _isStoreClosed = false;
+  bool _isLoadingStatus = true;
+  final ClosingRepository _closingRepository = ClosingRepository();
+
   @override
   void initState() {
     super.initState();
     _checkInitialConnectivity();
     _updateUnsyncedCount(); // Initial sync count check
     _checkAttendanceStatus();
+    _checkStoreStatus();
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
       _updateConnectivityStatus,
     );
+  }
+
+  Future<void> _checkStoreStatus() async {
+    try {
+      final preview = await _closingRepository.getClosingPreview();
+      if (mounted) {
+        setState(() {
+          _isStoreClosed = preview.isClosed;
+          _isLoadingStatus = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking store status: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingStatus = false;
+        });
+      }
+    }
   }
 
   Future<void> _checkAttendanceStatus() async {
@@ -123,6 +150,20 @@ class _PosScreenState extends State<PosScreen> {
   Future<void> _handleCheckout(BuildContext context) async {
     final cartCubit = context.read<CartCubit>();
     final cartState = cartCubit.state;
+
+    // 0. Validation: Check if store is closed
+    if (_isStoreClosed) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Toko sudah tutup kas. Tidak bisa melakukan transaksi.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
     // 1. Validation: Check if cart is empty
     if (cartState.items.isEmpty) {
@@ -640,111 +681,123 @@ class _PosScreenState extends State<PosScreen> {
         final change = cashInput - total;
         final isValid = cashInput >= total;
 
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Cash Input Field
-              const Text(
-                'Uang Diterima',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2D2D2D),
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _cashInputController,
-                keyboardType: TextInputType.number,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-                decoration: InputDecoration(
-                  hintText: '0',
-                  prefixText: 'Rp ',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: Color(0xFFFFB300),
-                      width: 2,
+        return Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Cash Input Field
+                    const Text(
+                      'Uang Diterima',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2D2D2D),
+                      ),
                     ),
-                  ),
-                ),
-                onChanged: (_) => setModalState(() {}),
-              ),
-              const SizedBox(height: 16),
-              // Quick Amount Buttons
-              const Text(
-                'Nominal Cepat',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2D2D2D),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _buildQuickAmountButton('Uang Pas', total, setModalState),
-                  _buildQuickAmountButton('10k', 10000, setModalState),
-                  _buildQuickAmountButton('20k', 20000, setModalState),
-                  _buildQuickAmountButton('50k', 50000, setModalState),
-                  _buildQuickAmountButton('100k', 100000, setModalState),
-                ],
-              ),
-              const SizedBox(height: 24),
-              // Change Display
-              if (cashInput > 0)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: isValid
-                        ? const Color(0xFFF0F9FF)
-                        : const Color(0xFFFFF3E0),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isValid
-                          ? const Color(0xFF2196F3)
-                          : const Color(0xFFFFB300),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        isValid ? 'Kembalian' : 'Kurang',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: isValid
-                              ? const Color(0xFF2196F3)
-                              : const Color(0xFFFFB300),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _cashInputController,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: '0',
+                        prefixText: 'Rp ',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFFFB300),
+                            width: 2,
+                          ),
                         ),
                       ),
-                      Text(
-                        formatter.format(change.abs()),
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
+                      onChanged: (_) => setModalState(() {}),
+                    ),
+                    const SizedBox(height: 16),
+                    // Quick Amount Buttons
+                    const Text(
+                      'Nominal Cepat',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2D2D2D),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildQuickAmountButton(
+                          'Uang Pas',
+                          total,
+                          setModalState,
+                        ),
+                        _buildQuickAmountButton('10k', 10000, setModalState),
+                        _buildQuickAmountButton('20k', 20000, setModalState),
+                        _buildQuickAmountButton('50k', 50000, setModalState),
+                        _buildQuickAmountButton('100k', 100000, setModalState),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    // Change Display
+                    if (cashInput > 0)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
                           color: isValid
-                              ? const Color(0xFF2196F3)
-                              : const Color(0xFFFFB300),
+                              ? const Color(0xFFF0F9FF)
+                              : const Color(0xFFFFF3E0),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isValid
+                                ? const Color(0xFF2196F3)
+                                : const Color(0xFFFFB300),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              isValid ? 'Kembalian' : 'Kurang',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: isValid
+                                    ? const Color(0xFF2196F3)
+                                    : const Color(0xFFFFB300),
+                              ),
+                            ),
+                            Text(
+                              formatter.format(change.abs()),
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: isValid
+                                    ? const Color(0xFF2196F3)
+                                    : const Color(0xFFFFB300),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
+                  ],
                 ),
-              const Spacer(),
-              // Payment Button
-              SizedBox(
+              ),
+            ),
+            // Payment Button Area
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: SizedBox(
                 width: double.infinity,
                 height: 56,
                 child: ElevatedButton(
@@ -775,8 +828,8 @@ class _PosScreenState extends State<PosScreen> {
                         ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         );
       },
     );
@@ -788,52 +841,61 @@ class _PosScreenState extends State<PosScreen> {
     double total,
     NumberFormat formatter,
   ) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          const SizedBox(height: 20),
-          // QR Code Placeholder
-          Container(
-            width: 250,
-            height: 250,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey[300]!, width: 2),
-            ),
+    return Column(
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.qr_code_2, size: 180, color: Colors.grey[300]),
-                Text(
-                  'QR Code Placeholder',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                const SizedBox(height: 10),
+                // QR Code Placeholder
+                Container(
+                  width: 200, // Reduced from 250 to fit better
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey[300]!, width: 2),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.qr_code_2, size: 140, color: Colors.grey[300]),
+                      Text(
+                        'QR Code Placeholder',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(height: 24),
+                Text(
+                  'Scan QRIS di atas',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Total: ${formatter.format(total)}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFFFB300),
+                  ),
+                ),
+                const SizedBox(height: 24),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-          Text(
-            'Scan QRIS di atas',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey[700],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Total: ${formatter.format(total)}',
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFFFFB300),
-            ),
-          ),
-          const Spacer(),
-          // Status Check Button
-          SizedBox(
+        ),
+        // Status Check Button Area
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: SizedBox(
             width: double.infinity,
             height: 56,
             child: ElevatedButton(
@@ -849,18 +911,27 @@ class _PosScreenState extends State<PosScreen> {
               ),
               child: _isProcessing
                   ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text(
-                      'CEK STATUS PEMBAYARAN',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                  : const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.center,
+                        child: Text(
+                          'KONFIRMASI STATUS PEMBAYARAN',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                          maxLines: 1,
+                        ),
                       ),
                     ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1208,7 +1279,10 @@ class _PosScreenState extends State<PosScreen> {
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         elevation: 0,
+        scrolledUnderElevation: 0,
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        iconTheme: const IconThemeData(color: Colors.black),
         title: Row(
           children: [
             Container(
@@ -1226,7 +1300,7 @@ class _PosScreenState extends State<PosScreen> {
                 Text(
                   'Lumpiah ERP',
                   style: TextStyle(
-                    color: Color(0xFF2D2D2D),
+                    color: Colors.black,
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
                   ),
@@ -1435,7 +1509,7 @@ class _PosScreenState extends State<PosScreen> {
           Container(
             margin: const EdgeInsets.only(right: 16),
             decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
+              color: Colors.red.shade50,
               borderRadius: BorderRadius.circular(8),
             ),
             child: IconButton(
@@ -1446,8 +1520,136 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ],
       ),
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            UserAccountsDrawerHeader(
+              decoration: const BoxDecoration(color: Color(0xFFFFB300)),
+              accountName: const Text(
+                'Kasir',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+              // Ideally fetch logic username from generic user profile if available,
+              // for now static 'Kasir' is fine or updated later.
+              accountEmail: const Text('Lumpiah Cashier System'),
+              currentAccountPicture: CircleAvatar(
+                backgroundColor: Colors.white,
+                child: const Icon(
+                  Icons.person,
+                  size: 40,
+                  color: Color(0xFFFFB300),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.point_of_sale),
+              title: const Text('POS / Kasir'),
+              onTap: () {
+                Navigator.pop(context); // Close drawer
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text('Riwayat Transaksi'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const TransactionHistoryScreen(),
+                  ),
+                );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.access_time),
+              title: const Text('Absensi Pegawai'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AttendanceScreen(),
+                  ),
+                );
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.lock_clock, color: Colors.orange),
+              title: const Text('Tutup Kas (EOD)'),
+              subtitle: const Text('Rekap Harian & Closing'),
+              onTap: () async {
+                Navigator.pop(context);
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DailyClosingScreen(),
+                  ),
+                );
+
+                // Refresh status regardless of result, just in case
+                if (mounted) {
+                  _checkStoreStatus();
+                }
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.print),
+              title: const Text('Pengaturan Printer'),
+              onTap: () {
+                Navigator.pop(context);
+                _showPrinterSettings(context);
+              },
+            ),
+            const Spacer(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Keluar', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                _showLogoutConfirmation(context);
+              },
+            ),
+          ],
+        ),
+      ),
       body: SafeArea(
-        child: isTablet ? _buildTabletLayout() : _buildPhoneLayout(),
+        child: Column(
+          children: [
+            if (_isStoreClosed)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade100,
+                  border: Border(
+                    bottom: BorderSide(color: Colors.red.shade700, width: 1),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.lock, color: Colors.red.shade900),
+                    const SizedBox(width: 12),
+                    Text(
+                      'TOKO SUDAH TUTUP. Transaksi dikunci.',
+                      style: TextStyle(
+                        color: Colors.red.shade900,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: isTablet ? _buildTabletLayout() : _buildPhoneLayout(),
+            ),
+          ],
+        ),
       ),
       // Show FAB only on phone to open cart
       floatingActionButton: isTablet ? null : _buildCartFab(),
@@ -1547,9 +1749,6 @@ class _PosScreenState extends State<PosScreen> {
   // Product Catalog Section
   // ============================================================================
   Widget _buildProductCatalog({required bool isTablet}) {
-    final crossAxisCount = isTablet ? 4 : 2;
-    final childAspectRatio = isTablet ? 0.85 : 0.75;
-
     return Container(
       color: const Color(0xFFF5F5F5),
       child: Column(
@@ -1639,28 +1838,39 @@ class _PosScreenState extends State<PosScreen> {
                 }
 
                 // GridView with real data
-                return Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    isTablet ? 20 : 12,
-                    0,
-                    isTablet ? 12 : 12,
-                    isTablet ? 20 : 80, // Extra padding for FAB on phone
-                  ),
-                  child: GridView.builder(
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      childAspectRatio: childAspectRatio,
-                      crossAxisSpacing: isTablet ? 16 : 10,
-                      mainAxisSpacing: isTablet ? 16 : 10,
-                    ),
-                    itemCount: filteredProducts.length,
-                    itemBuilder: (context, index) {
-                      return _ProductCard(
-                        product: filteredProducts[index],
-                        isCompact: !isTablet,
-                      );
-                    },
-                  ),
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    final int crossAxisCount = constraints.maxWidth > 600
+                        ? 4
+                        : 2;
+                    final double childAspectRatio = constraints.maxWidth > 600
+                        ? 0.85
+                        : 0.75;
+
+                    return Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        isTablet ? 20 : 12,
+                        0,
+                        isTablet ? 12 : 12,
+                        isTablet ? 20 : 80, // Extra padding for FAB on phone
+                      ),
+                      child: GridView.builder(
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: crossAxisCount,
+                          childAspectRatio: childAspectRatio,
+                          crossAxisSpacing: isTablet ? 16 : 10,
+                          mainAxisSpacing: isTablet ? 16 : 10,
+                        ),
+                        itemCount: filteredProducts.length,
+                        itemBuilder: (context, index) {
+                          return _ProductCard(
+                            product: filteredProducts[index],
+                            isCompact: constraints.maxWidth <= 600,
+                          );
+                        },
+                      ),
+                    );
+                  },
                 );
               },
             ),
@@ -1973,7 +2183,10 @@ class _PosScreenState extends State<PosScreen> {
                   width: double.infinity,
                   height: 48,
                   child: ElevatedButton(
-                    onPressed: state.items.isEmpty
+                    onPressed:
+                        (_isStoreClosed ||
+                            state.items.isEmpty ||
+                            _isLoadingStatus)
                         ? null
                         : () {
                             // Close bottom sheet if open (for phone layout)
@@ -1991,15 +2204,24 @@ class _PosScreenState extends State<PosScreen> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: Text(
-                      state.items.isEmpty
-                          ? 'Select Items'
-                          : 'Charge - ${formatter.format(total)}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    child: _isLoadingStatus
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            state.items.isEmpty
+                                ? 'Select Items'
+                                : 'Charge - ${formatter.format(total)}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
                 ),
               ],
@@ -2087,6 +2309,60 @@ class _ProductCard extends StatelessWidget {
 
   const _ProductCard({required this.product, this.isCompact = false});
 
+  void _handleAddToCart(BuildContext context) {
+    context.read<CartCubit>().addToCart(product);
+
+    // Custom "Add to Cart" Notification
+    ScaffoldMessenger.of(context).clearSnackBars();
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isTablet = screenWidth >= 600;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Colors.green,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check, size: 12, color: Colors.white),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                '${product.name} (+1)',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: Colors.white,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF323232),
+        behavior: SnackBarBehavior.floating,
+        elevation: 6,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        // Position: Bottom Left on Tablet, Center on Phone
+        margin: isTablet
+            ? EdgeInsets.only(
+                bottom: 24,
+                left: 24,
+                right:
+                    screenWidth - 300, // Forces approx 276px width aligned left
+              )
+            : const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        duration: const Duration(milliseconds: 1000),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final formatter = NumberFormat.currency(
@@ -2112,17 +2388,7 @@ class _ProductCard extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: () {
-              context.read<CartCubit>().addToCart(product);
-              ScaffoldMessenger.of(context).clearSnackBars();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('${product.name} added'),
-                  duration: const Duration(milliseconds: 500),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
+            onTap: () => _handleAddToCart(context),
             child: Padding(
               padding: EdgeInsets.all(isCompact ? 10 : 14),
               child: Column(
@@ -2205,83 +2471,7 @@ class _ProductCard extends StatelessWidget {
                               child: Material(
                                 color: Colors.transparent,
                                 child: InkWell(
-                                  onTap: () {
-                                    context.read<CartCubit>().addToCart(
-                                      product,
-                                    );
-
-                                    // Custom "Add to Cart" Notification
-                                    ScaffoldMessenger.of(
-                                      context,
-                                    ).clearSnackBars();
-                                    final screenWidth = MediaQuery.of(
-                                      context,
-                                    ).size.width;
-                                    final isTablet = screenWidth >= 600;
-
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.all(4),
-                                              decoration: const BoxDecoration(
-                                                color: Colors.green,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: const Icon(
-                                                Icons.check,
-                                                size: 12,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Flexible(
-                                              child: Text(
-                                                '${product.name} (+1)',
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 13,
-                                                  color: Colors.white,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        backgroundColor: const Color(
-                                          0xFF323232,
-                                        ),
-                                        behavior: SnackBarBehavior.floating,
-                                        elevation: 6,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            24,
-                                          ),
-                                        ),
-                                        // Position: Bottom Left on Tablet, Center on Phone
-                                        margin: isTablet
-                                            ? EdgeInsets.only(
-                                                bottom: 24,
-                                                left: 24,
-                                                right:
-                                                    screenWidth -
-                                                    300, // Forces approx 276px width aligned left
-                                              )
-                                            : const EdgeInsets.fromLTRB(
-                                                20,
-                                                0,
-                                                20,
-                                                20,
-                                              ),
-                                        duration: const Duration(
-                                          milliseconds: 1000,
-                                        ),
-                                      ),
-                                    );
-                                  },
+                                  onTap: () => _handleAddToCart(context),
                                   borderRadius: BorderRadius.circular(8),
                                   child: SizedBox(
                                     width: isCompact ? 28 : 32,
