@@ -4,6 +4,19 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
+import { GetAttendanceRecapDto } from './dto/get-attendance-recap.dto';
+import { UpdateAttendanceDto } from './dto/update-attendance.dto';
+
+export interface AttendanceRecapItem {
+  userId: number;
+  userName: string;
+  branchName: string;
+  totalDays: number;
+  totalHours: number | string; // Allow string during final formatting or number during calc
+  averageHours: string;
+  missingCheckout: number;
+}
 
 @Injectable()
 export class AttendanceService {
@@ -134,5 +147,162 @@ export class AttendanceService {
       orderBy: { date: 'desc' },
       take: 5, // Latest 5 records
     });
+  }
+
+  async getRecap(filter: GetAttendanceRecapDto) {
+    const { branchId, startDate, endDate, search } = filter;
+
+    const whereClause: Prisma.AttendanceWhereInput = {
+      date: {
+        gte: new Date(startDate),
+        lte: new Date(endDate),
+      },
+      branch: { isActive: true }, // Only active branches usually
+      user: { isActive: true }, // Only active users
+    };
+
+    if (branchId) {
+      whereClause.branchId = branchId;
+    }
+
+    if (search) {
+      whereClause.user = {
+        fullname: {
+          contains: search,
+          mode: 'insensitive',
+        },
+      };
+    }
+
+    const attendances = await this.prisma.attendance.findMany({
+      where: whereClause,
+      include: {
+        user: true,
+        branch: true,
+      },
+      orderBy: { user: { fullname: 'asc' } },
+    });
+
+    // Aggregation
+    const groupedByUser = new Map<number, AttendanceRecapItem>();
+
+    let grandTotalDays = 0;
+    let grandTotalHours = 0;
+    let grandTotalMissingCheckout = 0;
+
+    for (const record of attendances) {
+      const uId = record.userId;
+      if (!groupedByUser.has(uId)) {
+        groupedByUser.set(uId, {
+          userId: uId,
+          userName: record.user.fullname,
+          branchName: record.branch.name,
+          totalDays: 0,
+          totalHours: 0,
+          averageHours: '0.0', // Initial placeholder
+          missingCheckout: 0,
+        });
+      }
+
+      const entry = groupedByUser.get(uId)!;
+      entry.totalDays += 1;
+      grandTotalDays += 1;
+
+      if (record.clockOut) {
+        const durationMs = record.clockOut.getTime() - record.clockIn.getTime();
+        const durationHours = durationMs / (1000 * 60 * 60);
+        // We know totalHours is number during loop
+        entry.totalHours = (entry.totalHours as number) + durationHours;
+        grandTotalHours += durationHours;
+      } else {
+        entry.missingCheckout += 1;
+        grandTotalMissingCheckout += 1;
+      }
+    }
+
+    const recapList = Array.from(groupedByUser.values()).map((item) => {
+      const tHours = item.totalHours as number;
+      item.averageHours =
+        item.totalDays > 0 ? (tHours / item.totalDays).toFixed(1) : '0.0';
+      item.totalHours = tHours.toFixed(1);
+      return item;
+    });
+
+    // Pagination (In-Memory)
+    const page = filter.page || 1;
+    const limit = filter.limit || 10;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+
+    const paginatedRecap = recapList.slice(startIndex, endIndex);
+
+    return {
+      summary: {
+        totalDays: grandTotalDays,
+        totalHours: grandTotalHours.toFixed(1),
+        missingCheckout: grandTotalMissingCheckout,
+      },
+      recap: paginatedRecap,
+      meta: {
+        page,
+        limit,
+        total: recapList.length,
+        totalPages: Math.ceil(recapList.length / limit),
+      },
+    };
+  }
+
+  async getDetails(userId: number, startDate: string, endDate: string) {
+    const details = await this.prisma.attendance.findMany({
+      where: {
+        userId: Number(userId),
+        date: {
+          gte: new Date(startDate),
+          lte: new Date(endDate),
+        },
+      },
+      orderBy: { date: 'asc' },
+    });
+
+    // Add calculated duration field
+    return details.map((d) => {
+      let durationStr = '-';
+      if (d.clockOut) {
+        const diffMs = d.clockOut.getTime() - d.clockIn.getTime();
+        const hours = Math.floor(diffMs / (1000 * 60 * 60));
+        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        durationStr = `${hours}h ${minutes}m`;
+      }
+      return {
+        ...d,
+        durationString: durationStr,
+        id: d.id.toString(), // BigInt to string for JSON
+      };
+    });
+  }
+
+  async updateAttendance(id: number | string, dto: UpdateAttendanceDto) {
+    const { clockIn, clockOut, correctionNote } = dto;
+
+    // Validate existence
+    const existing = await this.prisma.attendance.findUnique({
+      where: { id: BigInt(id) },
+    });
+
+    if (!existing) throw new NotFoundException('Attendance record not found');
+
+    const dataToUpdate: Prisma.AttendanceUpdateInput = { correctionNote };
+    if (clockIn) dataToUpdate.clockIn = new Date(clockIn);
+    if (clockOut) dataToUpdate.clockOut = new Date(clockOut);
+
+    const updated = await this.prisma.attendance.update({
+      where: { id: BigInt(id) },
+      data: dataToUpdate,
+    });
+
+    return {
+      ...updated,
+      id: updated.id.toString(),
+    };
   }
 }
