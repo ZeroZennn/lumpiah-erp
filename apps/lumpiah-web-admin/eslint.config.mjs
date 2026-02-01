@@ -23,6 +23,13 @@ const eslintConfig = [
       "next-env.d.ts",
     ],
   },
+  {
+      settings: {
+          next: {
+              rootDir: "apps/lumpiah-web-admin/"
+          }
+      }
+  }
 ];
 
 export default eslintConfig;

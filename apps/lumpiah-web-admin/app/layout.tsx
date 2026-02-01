@@ -18,6 +18,7 @@ export const metadata: Metadata = {
   description: "Enterprise Resource Planning for Lumpiah Business",
 };
 
+import { SocketProvider } from "@/shared/container/socket-provider";
 import { Toaster } from "sonner";
 
 export default function RootLayout({
@@ -31,8 +32,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <QueryProvider>
-          {children}
-          <Toaster position="top-right" richColors />
+          <SocketProvider>
+            {children}
+            <Toaster position="top-right" richColors />
+          </SocketProvider>
         </QueryProvider>
       </body>
     </html>

@@ -5,6 +5,7 @@ import { InputJsonValue } from '@prisma/client/runtime/library';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductPriceDto } from './dto/update-product-price.dto';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 interface PriceAuditValue {
   price: number;
@@ -13,7 +14,10 @@ interface PriceAuditValue {
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogsService: AuditLogsService,
+  ) {}
 
   async findAll(branchId?: number) {
     const products = await this.prisma.product.findMany({
@@ -43,7 +47,7 @@ export class ProductsService {
   }
 
   async create(data: CreateProductDto) {
-    return this.prisma.product.create({
+    const product = await this.prisma.product.create({
       data: {
         name: data.name,
         categoryId: data.categoryId,
@@ -52,6 +56,19 @@ export class ProductsService {
         isActive: data.isActive ?? true,
       },
     });
+
+    // Audit Log for Create
+    await this.auditLogsService.create({
+      user: { connect: { id: 1 } }, // Mock User ID 1 (Owner)
+      actionType: 'CREATE',
+      targetTable: 'products',
+      targetId: product.id.toString(),
+      oldValue: undefined,
+      newValue: product as unknown as InputJsonValue,
+      ipAddress: '127.0.0.1',
+    });
+
+    return product;
   }
 
   async update(id: number, data: UpdateProductDto) {
@@ -63,10 +80,23 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
 
-    return this.prisma.product.update({
+    const updatedProduct = await this.prisma.product.update({
       where: { id },
       data,
     });
+
+    // Audit Log for Update
+    await this.auditLogsService.create({
+      user: { connect: { id: 1 } }, // Mock User ID 1
+      actionType: 'UPDATE',
+      targetTable: 'products',
+      targetId: id.toString(),
+      oldValue: product as unknown as InputJsonValue,
+      newValue: updatedProduct as unknown as InputJsonValue,
+      ipAddress: '127.0.0.1',
+    });
+
+    return updatedProduct;
   }
 
   async updatePrice(
@@ -108,7 +138,6 @@ export class ProductsService {
     });
 
     // Create Audit Log
-    // Mock user ID 1 for now if not provided, or passed from controller
     const oldValue: PriceAuditValue | null = oldPrice
       ? { price: Number(oldPrice), branchId: data.branchId }
       : null;
@@ -117,16 +146,14 @@ export class ProductsService {
       branchId: data.branchId,
     };
 
-    await this.prisma.auditLog.create({
-      data: {
-        userId: userId, // Default or actual ID
-        actionType: 'UPDATE_PRICE',
-        targetTable: 'products',
-        targetId: String(id),
-        oldValue: oldValue as unknown as InputJsonValue,
-        newValue: newValue as unknown as InputJsonValue,
-        ipAddress: '127.0.0.1', // Mock IP
-      },
+    await this.auditLogsService.create({
+      user: { connect: { id: userId } },
+      actionType: 'UPDATE_PRICE',
+      targetTable: 'products',
+      targetId: String(id),
+      oldValue: oldValue as unknown as InputJsonValue,
+      newValue: newValue as unknown as InputJsonValue,
+      ipAddress: '127.0.0.1', // Mock IP
     });
 
     return result;
