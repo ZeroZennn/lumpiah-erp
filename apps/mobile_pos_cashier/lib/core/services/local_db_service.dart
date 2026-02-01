@@ -2,6 +2,7 @@ import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:mobile_pos_cashier/local_db/entities/local_product.dart';
 import 'package:mobile_pos_cashier/local_db/entities/local_transaction.dart';
+import 'package:mobile_pos_cashier/local_db/entities/local_attendance.dart';
 
 class LocalDbService {
   // Singleton instance
@@ -24,6 +25,7 @@ class LocalDbService {
     _isar = await Isar.open([
       LocalProductSchema,
       LocalTransactionSchema,
+      LocalAttendanceSchema,
     ], directory: dir.path);
   }
 }

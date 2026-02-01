@@ -7,6 +7,7 @@ class AttendanceModel {
   final DateTime? clockOut;
   final int? shiftId;
   final String? correctionNote;
+  final bool isSynced;
 
   AttendanceModel({
     required this.id,
@@ -17,6 +18,7 @@ class AttendanceModel {
     this.clockOut,
     this.shiftId,
     this.correctionNote,
+    this.isSynced = true,
   });
 
   factory AttendanceModel.fromJson(Map<String, dynamic> json) {
