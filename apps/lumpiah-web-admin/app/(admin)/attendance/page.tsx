@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { format, startOfMonth, endOfMonth, parseISO } from "date-fns";
 import { ArrowLeft, BarChart3, Search, Download, Eye, AlertCircle, Loader2, WifiOff } from "lucide-react";
@@ -32,7 +32,7 @@ import { cn } from "@/shared/lib/utils";
 
 // --- Main Page Component ---
 
-export default function AttendanceRecapPage() {
+function AttendanceRecapContent() {
     // URL Sync
     const router = useRouter();
     const pathname = usePathname();
@@ -351,6 +351,14 @@ export default function AttendanceRecapPage() {
                 endDate={endDateStr}
             />
         </div>
+    );
+}
+
+export default function AttendanceRecapPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center p-8"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
+            <AttendanceRecapContent />
+        </Suspense>
     );
 }
 
