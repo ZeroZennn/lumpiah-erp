@@ -11,10 +11,15 @@ import { FindAllTransactionsDto } from './dto/find-all-transactions.dto';
 import { VoidTransactionDto } from './dto/void-transaction.dto';
 import { CreateDailyClosingDto } from './dto/create-daily-closing.dto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { InputJsonValue } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class TransactionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogsService: AuditLogsService,
+  ) {}
 
   // ... (private helpers omitted, no change needed) ...
 
@@ -401,7 +406,7 @@ export class TransactionsService {
       );
     }
 
-    return await this.prisma.$transaction(async (tx) => {
+    const updatedTx = await this.prisma.$transaction(async (tx) => {
       // 3. Update Transaction Status
       const updatedTx = await tx.transaction.update({
         where: { id },
@@ -411,24 +416,24 @@ export class TransactionsService {
         },
       });
 
-      // 4. Create Audit Log
-      await tx.auditLog.create({
-        data: {
-          userId: requesterUserId, // The user who initiated the request (likely cashier)
-          actionType: 'VOID',
-          targetTable: 'Transaction',
-          targetId: id,
-          oldValue: { status: transaction.status } as Prisma.InputJsonValue,
-          newValue: {
-            status: 'VOID',
-            reason: dto.reason,
-            approvedBy: adminUser.email,
-          } as Prisma.InputJsonValue,
-        },
-      });
-
       return updatedTx;
     });
+
+    // 4. Create Audit Log (using service for notifications)
+    await this.auditLogsService.create({
+      user: { connect: { id: requesterUserId } },
+      actionType: 'VOID',
+      targetTable: 'Transaction',
+      targetId: id,
+      oldValue: { status: transaction.status } as InputJsonValue,
+      newValue: {
+        status: 'VOID',
+        reason: dto.reason,
+        approvedBy: adminUser.email,
+      } as InputJsonValue,
+    });
+
+    return updatedTx;
   }
 
   async rejectVoid(id: string) {
@@ -529,7 +534,7 @@ export class TransactionsService {
     const preview = await this.getDailyClosingPreview(user);
 
     // 3. Create Daily Closing Record
-    return this.prisma.dailyClosing.create({
+    const result = await this.prisma.dailyClosing.create({
       data: {
         branch: { connect: { id: user.branchId } },
         closedBy: { connect: { id: user.userId } },
@@ -542,5 +547,18 @@ export class TransactionsService {
         status: 'CLOSED',
       } as unknown as Prisma.DailyClosingCreateInput,
     });
+
+    // 4. Audit Log for Closing
+    await this.auditLogsService.create({
+      user: { connect: { id: user.userId } },
+      actionType: 'DAILY_CLOSING',
+      targetTable: 'DailyClosing',
+      targetId: result.id.toString(),
+      oldValue: undefined,
+      newValue: result as unknown as InputJsonValue,
+      ipAddress: '127.0.0.1',
+    });
+
+    return result;
   }
 }

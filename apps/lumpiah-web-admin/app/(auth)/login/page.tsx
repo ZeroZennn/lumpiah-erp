@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Loader2, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { Loader2, Mail, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
@@ -60,7 +61,19 @@ const LoginPage = () => {
                     errorMessage = "System Error: Invalid response format from server (missing accessToken).";
                 }
 
+                // Map to user-friendly messages
+                if (errorMessage === "Invalid credentials" || errorMessage === "Unauthorized") {
+                    errorMessage = "Incorrect email or password.";
+                } else if (errorMessage.toLowerCase().includes("user not found") || errorMessage.toLowerCase().includes("inactive")) {
+                    errorMessage = "Account not found or inactive.";
+                } else if (errorMessage.toLowerCase().includes("network") || errorMessage.toLowerCase().includes("connect")) {
+                    errorMessage = "Unable to connect to the server. Please check your internet connection.";
+                }
+
                 setError(errorMessage);
+                toast.error("Login Failed", {
+                    description: errorMessage,
+                });
             },
         });
     };
@@ -76,7 +89,7 @@ const LoginPage = () => {
                 />
 
                 {/* Fallback pattern/gradient if image fails or to enhance - z-0 (below overlay) */}
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-900/40 via-purple-900/40 to-black/40 z-0" />
+                <div className="absolute inset-0 bg-linear-to-br from-blue-900/40 via-purple-900/40 to-black/40 z-0" />
 
                 {/* Overlay - z-10 (lighter now) */}
                 <div className="absolute inset-0 bg-black/20 z-10" />
@@ -117,8 +130,12 @@ const LoginPage = () => {
                     <Form {...form}>
                         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                             {error && (
-                                <div className="rounded-md bg-destructive/15 p-3 text-sm font-medium text-destructive dark:text-red-400 text-center animate-in fade-in slide-in-from-top-2">
-                                    {error}
+                                <div
+                                    className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm font-medium text-destructive dark:text-red-400 animate-in fade-in slide-in-from-top-2"
+                                    aria-live="polite"
+                                >
+                                    <AlertCircle className="h-4 w-4 shrink-0" />
+                                    <span>{error}</span>
                                 </div>
                             )}
 

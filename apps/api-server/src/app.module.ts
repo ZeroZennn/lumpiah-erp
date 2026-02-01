@@ -17,6 +17,7 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -35,7 +36,9 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
     TransactionsModule,
     CategoriesModule,
     AttendanceModule,
+    AttendanceModule,
     AuditLogsModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

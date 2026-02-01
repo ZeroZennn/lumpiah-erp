@@ -1,10 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from 'src/prisma';
+import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationGateway } from './notification.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AuditLogsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationGateway: NotificationGateway,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async findAll(params: {
     skip?: number;
@@ -50,6 +56,42 @@ export class AuditLogsService {
   async create(
     data: Prisma.AuditLogCreateInput | Prisma.AuditLogUncheckedCreateInput,
   ) {
-    return this.prisma.auditLog.create({ data });
+    const log = await this.prisma.auditLog.create({ data });
+
+    // Generate Link and Description
+    let link: string | undefined;
+    let description = `${data.actionType} on ${data.targetTable}`;
+    const table = data.targetTable?.toLowerCase();
+
+    if (table === 'products' || table === 'product') {
+      const val = (data.newValue as { name?: string }) || {};
+      // If we have a name, search by it, otherwise just go to products
+      if (val?.name) {
+        link = `/products?q=${encodeURIComponent(val.name)}`;
+        description = `${data.actionType} Product: ${val.name}`;
+      } else {
+        link = `/products`;
+        description = `${data.actionType} Product`;
+      }
+    } else if (table === 'transaction' || table === 'transactions') {
+      // Transactions usually searched by ID
+      link = `/transactions?search=${data.targetId}`;
+      description = `${data.actionType} Transaction #${data.targetId}`;
+    } else if (table === 'dailyclosing' || table === 'daily_closing') {
+      link = `/reports/daily-closings`;
+      description = `${data.actionType} Daily Closing`;
+    }
+
+    // Persist Notification
+    await this.notificationsService.notifyAdmins(
+      'New System Activity',
+      description,
+      link,
+    );
+
+    console.log('Emitting new_audit_log event for id:', log.id);
+    this.notificationGateway.sendNewAuditLog(log);
+
+    return log;
   }
 }

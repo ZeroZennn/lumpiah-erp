@@ -60,6 +60,13 @@ export const queryKeys = {
     stats: (branchId?: string) => ['dashboard', 'stats', branchId] as const,
     sales: (period: string) => ['dashboard', 'sales', period] as const,
   },
+
+  // Notification queries
+  notifications: {
+    all: ['notifications'] as const,
+    list: (filter: { isRead?: boolean }) => ['notifications', 'list', filter] as const,
+    unreadCount: ['notifications', 'unread-count'] as const,
+  },
 } as const;
 
 export default queryKeys;
