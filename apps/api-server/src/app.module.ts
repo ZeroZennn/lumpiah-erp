@@ -16,6 +16,7 @@ import { ProductsModule } from './modules/products/products.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { AttendanceModule } from './modules/attendance/attendance.module';
     TransactionsModule,
     CategoriesModule,
     AttendanceModule,
+    AuditLogsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

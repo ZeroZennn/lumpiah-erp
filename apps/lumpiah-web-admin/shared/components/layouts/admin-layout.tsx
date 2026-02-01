@@ -82,7 +82,7 @@ const navGroups = [
         label: "SISTEM",
         items: [
             { title: "Pengguna", url: "/users", icon: UserCog, requiredRoles: ['Admin', 'Owner'] },
-            { title: "Audit Log", url: "/users/audit", icon: ClipboardList, requiredRoles: ['Admin', 'Owner'] },
+            { title: "Audit Log", url: "/audit", icon: ClipboardList, requiredRoles: ['Admin', 'Owner'] },
         ],
     },
 ];
