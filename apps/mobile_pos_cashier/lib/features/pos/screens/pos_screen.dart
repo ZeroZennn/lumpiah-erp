@@ -13,6 +13,8 @@ import 'package:mobile_pos_cashier/core/services/printer_service.dart';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:mobile_pos_cashier/core/services/digital_receipt_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:mobile_pos_cashier/features/attendance/screens/attendance_screen.dart';
+import '../../attendance/repositories/attendance_repository.dart';
 import '../../transactions/screens/transaction_history_screen.dart';
 
 /// High-fidelity Modern POS Screen with Responsive Layout
@@ -45,14 +47,34 @@ class _PosScreenState extends State<PosScreen> {
   // Category list
   final List<String> _categories = ['Semua', 'Lumpia', 'Minuman', 'Paket'];
 
+  // Attendance State
+  bool _hasCheckedIn = true; // Default to true to hide badge initially
+  final AttendanceRepository _attendanceRepository = AttendanceRepository();
+
   @override
   void initState() {
     super.initState();
     _checkInitialConnectivity();
     _updateUnsyncedCount(); // Initial sync count check
+    _checkAttendanceStatus();
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen(
       _updateConnectivityStatus,
     );
+  }
+
+  Future<void> _checkAttendanceStatus() async {
+    try {
+      final todayStatus = await _attendanceRepository.getTodayStatus();
+      if (mounted) {
+        setState(() {
+          // If null, hasn't checked in. If not null, checked in (regardless if checked out or not, main goal is to remind check in)
+          // User said "penanda kalau belum absen" -> if todayStatus is null
+          _hasCheckedIn = todayStatus != null;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking attendance status: $e');
+    }
   }
 
   Future<void> _checkInitialConnectivity() async {
@@ -1250,6 +1272,70 @@ class _PosScreenState extends State<PosScreen> {
                 shape: BoxShape.circle,
               ),
             ),
+
+          // Attendance Button with Text & Badge
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AttendanceScreen(),
+                ),
+              ).then((_) => _checkAttendanceStatus()); // Refresh on return
+            },
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFB300).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10), // Rounded pill shape
+                border: Border.all(
+                  color: const Color(0xFFFFB300).withOpacity(0.3),
+                ),
+              ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.access_time,
+                        size: 20,
+                        color: Color(0xFFFFB300),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Absensi',
+                        style: TextStyle(
+                          color: const Color(0xFFFFB300).withOpacity(1),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (!_hasCheckedIn)
+                    Positioned(
+                      top: -10,
+                      right: -10,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 10,
+                          minHeight: 10,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
 
           // History Button
           Container(
