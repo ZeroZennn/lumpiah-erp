@@ -18,9 +18,14 @@ import 'package:mobile_pos_cashier/features/pos/bloc/cart_cubit.dart';
 
 import 'package:intl/date_symbol_data_local.dart';
 
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 void main() async {
   // Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load Environment Variables
+  await dotenv.load(fileName: ".env");
 
   // Initialize date formatting for Indonesian locale
   await initializeDateFormatting('id_ID', null);
