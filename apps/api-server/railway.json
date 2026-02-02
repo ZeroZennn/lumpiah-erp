@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "DATABASE_URL=$DIRECT_URL npx prisma migrate deploy && npx prisma generate && npm run start:prod",
+    "startCommand": "npx prisma migrate deploy && npx prisma generate && npm run start:prod",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
