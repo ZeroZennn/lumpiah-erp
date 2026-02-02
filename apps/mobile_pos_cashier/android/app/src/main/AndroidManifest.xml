@@ -12,7 +12,7 @@
 
     <uses-feature android:name="android.hardware.usb.host" />
     <application
-        android:label="mobile_pos_cashier"
+        android:label="Lumpia Panandaran"
         android:name="${applicationName}"
         android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher">
