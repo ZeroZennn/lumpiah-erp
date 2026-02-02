@@ -11,7 +11,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
   imports: [
     PassportModule,
     JwtModule.register({
-      secret: 'RAHASIA_LUMPIA',
+      secret: process.env.JWT_SECRET || 'RAHASIA_LUMPIA',
       signOptions: { expiresIn: '1d' },
     }),
     PrismaModule,
