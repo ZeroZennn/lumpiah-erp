@@ -1,205 +1,257 @@
+import 'dart:async';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/services.dart';
+import '../../features/pos/models/transaction_model.dart';
 
-/// Service for managing thermal printer connections and printing receipts
 class PrinterService {
-  // Singleton instance
   static final PrinterService _instance = PrinterService._internal();
   factory PrinterService() => _instance;
   PrinterService._internal();
 
-  // Bluetooth printer instance
   final BlueThermalPrinter _bluetooth = BlueThermalPrinter.instance;
 
-  // Size constants for printing
-  static const int SIZE_NORMAL = 0;
-  static const int SIZE_MEDIUM = 1;
-  static const int SIZE_LARGE = 2;
-  static const int SIZE_EXTRA_LARGE = 3;
+  // Track connection status
+  final StreamController<bool> _connectionStatusController =
+      StreamController<bool>.broadcast();
+  Stream<bool> get connectionStatusStream => _connectionStatusController.stream;
 
-  // Alignment constants
-  static const int ALIGN_LEFT = 0;
-  static const int ALIGN_CENTER = 1;
-  static const int ALIGN_RIGHT = 2;
+  BluetoothDevice? _connectedDevice;
+  BluetoothDevice? get connectedDevice => _connectedDevice;
 
-  /// Initialize the bluetooth instance
-  void init() {
-    // Initialization is handled internally by blue_thermal_printer
-    // This method can be used for future setup if needed
+  CapabilityProfile? _profile;
+
+  static const String _prefKeyName = 'printer_name';
+  static const String _prefKeyAddress = 'printer_address';
+
+  Future<void> init() async {
+    try {
+      _profile = await CapabilityProfile.load();
+
+      _bluetooth.onStateChanged().listen((state) {
+        if (state == BlueThermalPrinter.CONNECTED) {
+          _connectionStatusController.add(true);
+        } else if (state == BlueThermalPrinter.DISCONNECTED) {
+          _connectionStatusController.add(false);
+          _connectedDevice = null;
+        }
+      });
+
+      await autoConnect();
+    } catch (e) {
+      print('PrinterService init error: $e');
+    }
   }
 
-  /// Get list of bonded/paired bluetooth devices
   Future<List<BluetoothDevice>> getBondedDevices() async {
     try {
-      return await _bluetooth.getBondedDevices();
+      return await _bluetooth.getBondedDevices() ?? [];
     } catch (e) {
-      throw Exception('Failed to get bonded devices: $e');
+      print('Error getting devices: $e');
+      return [];
     }
   }
 
-  /// Connect to a specific bluetooth printer device
   Future<void> connect(BluetoothDevice device) async {
+    if (device.address == null) throw Exception('Device has no address');
+
     try {
+      final isConnected = await _bluetooth.isConnected;
+      if (isConnected == true) {
+        await _bluetooth.disconnect();
+      }
+
       await _bluetooth.connect(device);
+      _connectedDevice = device;
+      _connectionStatusController.add(true);
+
+      await _saveLastPrinter(device);
     } catch (e) {
-      throw Exception('Failed to connect to printer: $e');
+      _connectedDevice = null;
+      _connectionStatusController.add(false);
+      throw Exception('Failed to connect: $e');
     }
   }
 
-  /// Disconnect from the connected printer
   Future<void> disconnect() async {
-    try {
-      await _bluetooth.disconnect();
-    } catch (e) {
-      throw Exception('Failed to disconnect: $e');
-    }
+    await _bluetooth.disconnect();
+    _connectedDevice = null;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefKeyName);
+    await prefs.remove(_prefKeyAddress);
+
+    _connectionStatusController.add(false);
   }
 
-  /// Check if printer is currently connected
   Future<bool> isConnected() async {
+    return (await _bluetooth.isConnected) ?? false;
+  }
+
+  Future<void> autoConnect() async {
     try {
-      return await _bluetooth.isConnected ?? false;
+      final prefs = await SharedPreferences.getInstance();
+      final name = prefs.getString(_prefKeyName);
+      final address = prefs.getString(_prefKeyAddress);
+
+      if (name != null && address != null) {
+        final device = BluetoothDevice(name, address);
+        await connect(device);
+      }
     } catch (e) {
-      return false;
+      print('Auto-connect failed: $e');
     }
   }
 
-  /// Print receipt with transaction data
-  ///
-  /// Parameters:
-  /// - transactionData: Map containing transaction details (branch, date, total, paymentMethod, cashReceived, change)
-  /// - items: List of cart items with product details
+  Future<void> _saveLastPrinter(BluetoothDevice device) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefKeyName, device.name ?? 'Unknown');
+    if (device.address != null) {
+      await prefs.setString(_prefKeyAddress, device.address!);
+    }
+  }
+
+  // ===================================
+  // PRINTING LOGIC
+  // ===================================
+
+  Future<void> _sendBytes(List<int> bytes) async {
+    final isConnected = await _bluetooth.isConnected;
+    if (isConnected == true) {
+      await _bluetooth.writeBytes(Uint8List.fromList(bytes));
+    } else {
+      throw Exception('Printer not connected');
+    }
+  }
+
+  Future<void> printTest() async {
+    final profile = _profile ?? await CapabilityProfile.load();
+    final generator = Generator(PaperSize.mm58, profile);
+    List<int> bytes = [];
+
+    bytes += generator.text(
+      'Bluetooth Printer Test',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      'Success!',
+      styles: const PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.feed(2);
+
+    await _sendBytes(bytes);
+  }
+
+  Future<void> printTransaction(TransactionModel transaction) async {
+    // Ensure profile loaded
+    final profile = _profile ?? await CapabilityProfile.load();
+    final generator = Generator(PaperSize.mm58, profile);
+    List<int> bytes = [];
+
+    // Formatters
+    final currencyFormatter = NumberFormat.currency(
+      locale: 'id_ID',
+      symbol: 'Rp ',
+      decimalDigits: 0,
+    );
+    final dateFormatter = DateFormat('dd/MM/yyyy HH:mm');
+
+    // ==================== HEADER ====================
+    bytes += generator.text(
+      'LUMPIA SEMARANG',
+      styles: const PosStyles(
+        align: PosAlign.center,
+        bold: true,
+        height: PosTextSize.size2,
+        width: PosTextSize.size2,
+      ),
+    );
+
+    bytes += generator.text(
+      transaction.branchName,
+      styles: const PosStyles(align: PosAlign.center),
+    );
+
+    bytes += generator.text(
+      dateFormatter.format(transaction.date),
+      styles: const PosStyles(align: PosAlign.center),
+    );
+    bytes += generator.hr();
+
+    // ==================== BODY ====================
+    for (final item in transaction.items) {
+      bytes += generator.text(
+        '${item.quantity} x ${item.name}',
+        styles: const PosStyles(align: PosAlign.left),
+      );
+      bytes += generator.text(
+        currencyFormatter.format(item.total),
+        styles: const PosStyles(align: PosAlign.right),
+      );
+    }
+
+    bytes += generator.hr(ch: '-');
+
+    // ==================== FOOTER ====================
+    bytes += generator.row([
+      PosColumn(text: 'TOTAL', width: 6, styles: const PosStyles(bold: true)),
+      PosColumn(
+        text: currencyFormatter.format(transaction.totalAmount),
+        width: 6,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
+    ]);
+
+    bytes += generator.text(
+      'Payment: ${transaction.paymentMethod}',
+      styles: const PosStyles(align: PosAlign.left),
+    );
+
+    if (transaction.paymentMethod == 'CASH') {
+      if (transaction.cashReceived != null) {
+        bytes += generator.row([
+          PosColumn(text: 'Tunai', width: 6),
+          PosColumn(
+            text: currencyFormatter.format(transaction.cashReceived),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+      if (transaction.change != null) {
+        bytes += generator.row([
+          PosColumn(text: 'Kembalian', width: 6),
+          PosColumn(
+            text: currencyFormatter.format(transaction.change),
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]);
+      }
+    }
+
+    bytes += generator.feed(1);
+    bytes += generator.text(
+      'Terima Kasih',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.feed(1);
+
+    await _sendBytes(bytes);
+  }
+
+  // Legacy support method
   Future<void> printReceipt({
     required Map<String, dynamic> transactionData,
     required List<Map<String, dynamic>> items,
     bool isReprint = false,
   }) async {
-    final connected = await isConnected();
-    if (!connected) {
-      throw Exception('Printer not connected');
-    }
-
-    try {
-      final formatter = NumberFormat.currency(
-        locale: 'id_ID',
-        symbol: 'Rp ',
-        decimalDigits: 0,
-      );
-
-      final dateFormatter = DateFormat('dd/MM/yyyy HH:mm');
-
-      // ==================== HEADER ====================
-      if (isReprint) {
-        _bluetooth.printCustom(
-          '* DUPLICATE / COPY *',
-          SIZE_LARGE,
-          ALIGN_CENTER,
-        );
-        _bluetooth.printNewLine();
-      }
-
-      // Shop name - Bold, Center, Large
-      // Shop name - Bold, Center, Large
-      _bluetooth.printCustom('LUMPIA SEMARANG', SIZE_EXTRA_LARGE, ALIGN_CENTER);
-      _bluetooth.printNewLine();
-
-      // Branch name
-      final branchName = transactionData['branchName'] ?? 'Cabang Utama';
-      _bluetooth.printCustom(branchName, SIZE_MEDIUM, ALIGN_CENTER);
-
-      // Date and time
-      final date = transactionData['date'] != null
-          ? dateFormatter.format(transactionData['date'])
-          : dateFormatter.format(DateTime.now());
-      _bluetooth.printCustom(date, SIZE_MEDIUM, ALIGN_CENTER);
-      _bluetooth.printNewLine();
-
-      // Divider
-      _bluetooth.printCustom(
-        '--------------------------------',
-        SIZE_MEDIUM,
-        ALIGN_CENTER,
-      );
-      _bluetooth.printNewLine();
-
-      // ==================== BODY - ITEMS ====================
-      for (final item in items) {
-        final qty = item['quantity'] ?? 0;
-        final productName = item['productName'] ?? item['name'] ?? 'Unknown';
-        final price = item['price'] ?? 0;
-        final total = qty * price;
-
-        // Item line: "Qty x Product Name"
-        _bluetooth.printLeftRight(
-          '$qty x $productName',
-          formatter.format(total),
-          SIZE_MEDIUM,
-        );
-      }
-
-      _bluetooth.printNewLine();
-
-      // ==================== FOOTER ====================
-      // Divider
-      _bluetooth.printCustom(
-        '--------------------------------',
-        SIZE_MEDIUM,
-        ALIGN_CENTER,
-      );
-
-      // Total amount
-      final totalAmount = transactionData['totalAmount'] ?? 0;
-      _bluetooth.printLeftRight(
-        'TOTAL',
-        formatter.format(totalAmount),
-        SIZE_LARGE,
-      );
-      _bluetooth.printNewLine();
-
-      // Payment method
-      final paymentMethod = transactionData['paymentMethod'] ?? 'CASH';
-      _bluetooth.printLeftRight('Metode Bayar', paymentMethod, SIZE_MEDIUM);
-
-      // Cash received and change (only for CASH payment)
-      if (paymentMethod == 'CASH') {
-        final cashReceived = transactionData['cashReceived'] ?? 0;
-        final change = transactionData['change'] ?? 0;
-
-        _bluetooth.printLeftRight(
-          'Tunai',
-          formatter.format(cashReceived),
-          SIZE_MEDIUM,
-        );
-
-        _bluetooth.printLeftRight(
-          'Kembalian',
-          formatter.format(change),
-          SIZE_MEDIUM,
-        );
-      }
-
-      _bluetooth.printNewLine();
-
-      // ==================== CLOSING ====================
-      // Divider
-      _bluetooth.printCustom(
-        '--------------------------------',
-        SIZE_MEDIUM,
-        ALIGN_CENTER,
-      );
-      _bluetooth.printNewLine();
-
-      // Thank you message
-      _bluetooth.printCustom('Terima Kasih', SIZE_MEDIUM, ALIGN_CENTER);
-      _bluetooth.printCustom('Atas Kunjungan Anda', SIZE_MEDIUM, ALIGN_CENTER);
-      _bluetooth.printNewLine();
-      _bluetooth.printNewLine();
-      _bluetooth.printNewLine();
-
-      // Feed paper
-      _bluetooth.paperCut();
-    } catch (e) {
-      throw Exception('Failed to print receipt: $e');
-    }
+    final transaction = TransactionModel.fromMap({
+      ...transactionData,
+      'items': items,
+    });
+    await printTransaction(transaction);
   }
 }

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:isar/isar.dart';
-import 'package:path_provider/path_provider.dart';
 
 // Core
 import 'package:mobile_pos_cashier/core/theme/app_theme.dart';
 import 'package:mobile_pos_cashier/core/services/local_db_service.dart';
+import 'package:mobile_pos_cashier/core/services/printer_service.dart';
 
 // Auth
 import 'package:mobile_pos_cashier/features/auth/services/auth_service.dart';
@@ -28,6 +28,9 @@ void main() async {
   // Initialize Local DB Service
   final localDbService = LocalDbService();
   await localDbService.init();
+
+  // Initialize Printer Service (Auto-Connect)
+  await PrinterService().init();
 
   // Run the app
   runApp(MyApp(isar: localDbService.isar));

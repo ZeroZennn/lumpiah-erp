@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:mobile_pos_cashier/features/pos/bloc/cart_cubit.dart';
+import 'package:mobile_pos_cashier/features/pos/models/transaction_model.dart';
 import 'package:mobile_pos_cashier/local_db/entities/local_product.dart';
 import 'package:mobile_pos_cashier/features/pos/repositories/product_repository.dart';
 import 'package:mobile_pos_cashier/features/pos/repositories/transaction_repository.dart';
@@ -10,7 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:mobile_pos_cashier/features/auth/services/auth_service.dart';
 import 'package:mobile_pos_cashier/features/auth/screens/login_screen.dart';
 import 'package:mobile_pos_cashier/core/services/printer_service.dart';
-import 'package:blue_thermal_printer/blue_thermal_printer.dart';
+
 import 'package:mobile_pos_cashier/core/services/digital_receipt_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:mobile_pos_cashier/features/attendance/screens/attendance_screen.dart';
@@ -18,6 +19,7 @@ import '../../attendance/repositories/attendance_repository.dart';
 import '../../transactions/screens/transaction_history_screen.dart';
 import '../../daily_closing/screens/daily_closing_screen.dart';
 import '../../daily_closing/repositories/closing_repository.dart';
+import '../../settings/screens/printer_settings_screen.dart';
 
 /// High-fidelity Modern POS Screen with Responsive Layout
 /// - Tablet: Side-by-side layout (Product Catalog | Cart Panel)
@@ -339,129 +341,6 @@ class _PosScreenState extends State<PosScreen> {
             ),
           );
         }
-      }
-    }
-  }
-
-  /// Shows printer settings dialog
-  void _showPrinterSettings(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text('Pengaturan Printer'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: FutureBuilder<List<BluetoothDevice>>(
-              future: PrinterService().getBondedDevices(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const SizedBox(
-                    height: 100,
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFFFFB300),
-                      ),
-                    ),
-                  );
-                }
-
-                if (snapshot.hasError) {
-                  return Text('Error: ${snapshot.error}');
-                }
-
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Text(
-                    'Tidak ada printer yang terhubung (paired).',
-                  );
-                }
-
-                return ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: snapshot.data!.length,
-                  itemBuilder: (context, index) {
-                    final device = snapshot.data![index];
-                    return ListTile(
-                      leading: const Icon(Icons.print, color: Colors.grey),
-                      title: Text(device.name ?? 'Unknown Device'),
-                      subtitle: Text(device.address ?? ''),
-                      onTap: () => _connectToPrinter(context, device),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Tutup'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  /// Connects to selected printer
-  Future<void> _connectToPrinter(
-    BuildContext context,
-    BluetoothDevice device,
-  ) async {
-    // Close the list dialog first
-    Navigator.of(context).pop();
-
-    // Show connecting loading
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(color: Color(0xFFFFB300)),
-                SizedBox(height: 16),
-                Text('Menghubungkan printer...'),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    try {
-      await PrinterService().connect(device);
-
-      if (mounted) {
-        setState(() {
-          _isPrinterConnected = true;
-        });
-      }
-
-      if (context.mounted) {
-        Navigator.of(context).pop(); // Dismiss loading
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Printer Terhubung'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        Navigator.of(context).pop(); // Dismiss loading
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal menghubungkan: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
     }
   }
@@ -1017,32 +896,46 @@ class _PosScreenState extends State<PosScreen> {
         };
 
         // Auto-print receipt logic
-        final isConnected = await PrinterService().isConnected();
+        // Use try-catch to ensure app doesn't crash if printing fails
+        try {
+          final isConnected = await PrinterService().isConnected();
 
-        if (isConnected) {
-          try {
-            // Print receipt
-            await PrinterService().printReceipt(
-              transactionData: transactionData,
-              items: printItems,
-            );
-          } catch (e) {
-            debugPrint('Auto-print error: $e');
+          if (isConnected) {
+            // Construct explicit model
+            final transaction = TransactionModel.fromMap({
+              ...transactionData,
+              'items': printItems,
+            });
+
+            await PrinterService().printTransaction(transaction);
+
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Gagal mencetak struk'),
+                  content: Text('Transaksi Berhasil & Struk Tercetak'),
+                  backgroundColor: Colors.green,
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            }
+          } else {
+            // Not connected, but transaction success
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Transaksi Berhasil (Printer tidak terhubung)'),
                   backgroundColor: Colors.orange,
                   duration: Duration(seconds: 2),
                 ),
               );
             }
           }
-        } else {
+        } catch (e) {
+          debugPrint('Auto-print error: $e');
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Transaksi sukses, tapi printer tidak terhubung'),
+                content: Text('Transaksi Berhasil, namun Gagal mencetak struk'),
                 backgroundColor: Colors.orange,
                 duration: Duration(seconds: 3),
               ),
@@ -1487,22 +1380,38 @@ class _PosScreenState extends State<PosScreen> {
           ),
 
           // Printer Status
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: _isPrinterConnected
-                  ? Colors.green.withOpacity(0.1)
-                  : Colors.red.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: IconButton(
-              icon: Icon(
-                _isPrinterConnected ? Icons.print : Icons.print_disabled,
-                color: _isPrinterConnected ? Colors.green : Colors.red,
-              ),
-              onPressed: () => _showPrinterSettings(context),
-              tooltip: 'Status Printer',
-            ),
+          StreamBuilder<bool>(
+            stream: PrinterService().connectionStatusStream,
+            initialData: false,
+            builder: (context, snapshot) {
+              final isConnected = snapshot.data ?? false;
+              return Container(
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: isConnected
+                      ? Colors.green.shade50
+                      : Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: IconButton(
+                  icon: Icon(
+                    Icons.print,
+                    color: isConnected ? Colors.green : Colors.red,
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const PrinterSettingsScreen(),
+                      ),
+                    );
+                  },
+                  tooltip: isConnected
+                      ? 'Printer Terhubung'
+                      : 'Printer Tidak Terhubung',
+                ),
+              );
+            },
           ),
 
           // Logout Button
@@ -1601,7 +1510,12 @@ class _PosScreenState extends State<PosScreen> {
               title: const Text('Pengaturan Printer'),
               onTap: () {
                 Navigator.pop(context);
-                _showPrinterSettings(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PrinterSettingsScreen(),
+                  ),
+                );
               },
             ),
             const Spacer(),
@@ -1928,7 +1842,15 @@ class _PosScreenState extends State<PosScreen> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.print),
-                          onPressed: () => _showPrinterSettings(context),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const PrinterSettingsScreen(),
+                              ),
+                            );
+                          },
                           tooltip: 'Pengaturan Printer',
                           color: _isPrinterConnected
                               ? Colors.green
