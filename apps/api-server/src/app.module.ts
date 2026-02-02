@@ -11,9 +11,35 @@ import { HrModule } from './modules/hr/hr.module';
 import { UsersModule } from './modules/users/users.module';
 import { SystemModule } from './modules/system/system.module';
 import { CommonModule } from './common/common.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { ProductsModule } from './modules/products/products.module';
+import { TransactionsModule } from './modules/transactions/transactions.module';
+import { CategoriesModule } from './modules/categories/categories.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
-  imports: [PosModule, InventoryModule, ReportsModule, BranchesModule, DssEngineModule, ProductionModule, HrModule, UsersModule, SystemModule, CommonModule],
+  imports: [
+    PosModule,
+    InventoryModule,
+    ReportsModule,
+    BranchesModule,
+    DssEngineModule,
+    ProductionModule,
+    HrModule,
+    UsersModule,
+    SystemModule,
+    CommonModule,
+    AuthModule,
+    ProductsModule,
+    TransactionsModule,
+    CategoriesModule,
+    AttendanceModule,
+    AttendanceModule,
+    AuditLogsModule,
+    NotificationsModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })

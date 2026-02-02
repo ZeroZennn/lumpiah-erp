@@ -5,6 +5,20 @@ allprojects {
     }
 }
 
+subprojects {
+    buildscript {
+        repositories {
+            google()
+            mavenCentral()
+        }
+        configurations.all {
+            resolutionStrategy {
+                force("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
+            }
+        }
+    }
+}
+
 val newBuildDir: Directory = rootProject.layout.buildDirectory.dir("../../build").get()
 rootProject.layout.buildDirectory.value(newBuildDir)
 
@@ -19,3 +33,16 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+// Workaround for 'Namespace not specified' error in older libraries like isar_flutter_libs
+// This is required for Android Gradle Plugin 8.0+
+subprojects {
+    pluginManager.withPlugin("com.android.library") {
+        val android = extensions.getByName("android") as com.android.build.gradle.LibraryExtension
+        if (android.namespace.isNullOrEmpty()) {
+            android.namespace = group.toString()
+        }
+    }
+}
+
+

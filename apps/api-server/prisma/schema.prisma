@@ -1,14 +1,290 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Lumpiah ERP - Complete Database Schema
+// PostgreSQL with Supabase
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+
+
+// ============================================
+// MODUL 1: Manajemen User & Cabang (Master Data)
+// ============================================
+
+model Branch {
+  id        Int      @id @default(autoincrement())
+  name      String
+  address   String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  users                 User[]
+  transactions          Transaction[]
+  dailyClosings         DailyClosing[]
+  dssConfigs            DssConfig[]
+  productionPlans       ProductionPlan[]
+  branchProductPrices   BranchProductPrice[]
+  attendances           Attendance[]
+
+  @@map("branches")
+}
+
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String // 'Owner', 'Admin', 'Pegawai'
+
+  // Relations
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  fullname     String
+  phoneNumber  String?  @map("phone_number")
+  passwordHash String   @map("password_hash")
+  roleId       Int      @map("role_id")
+  branchId     Int?     @map("branch_id") // NULL for Owner (global access)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  role                   Role                   @relation(fields: [roleId], references: [id])
+  branch                 Branch?                @relation(fields: [branchId], references: [id])
+  transactions           Transaction[]
+  dailyClosings          DailyClosing[]
+  productionRealizations ProductionRealization[]
+  attendances            Attendance[]
+  auditLogs              AuditLog[]
+  notifications          Notification[]
+
+  @@map("users")
+}
+
+// ============================================
+// MODUL 2: Produk & Harga (Multi-Price)
+// ============================================
+
+model Category {
+  id   Int    @id @default(autoincrement())
+  name String // Lumpia, Minuman, Paket
+
+  // Relations
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id         Int      @id @default(autoincrement())
+  categoryId Int      @map("category_id")
+  name       String
+  unit       String   @default("pcs")
+  basePrice  Decimal  @map("base_price") @db.Decimal
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  category            Category             @relation(fields: [categoryId], references: [id])
+  transactionItems    TransactionItem[]
+  branchProductPrices BranchProductPrice[]
+  productionPlans     ProductionPlan[]
+
+  @@map("products")
+}
+
+model BranchProductPrice {
+  id        Int     @id @default(autoincrement())
+  branchId  Int     @map("branch_id")
+  productId Int     @map("product_id")
+  price     Decimal @db.Decimal
+
+  // Relations
+  branch  Branch  @relation(fields: [branchId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([branchId, productId])
+  @@map("branch_product_prices")
+}
+
+// ============================================
+// MODUL 3: Kasir & Transaksi (POS)
+// ============================================
+
+model Transaction {
+  id              String   @id @default(uuid()) // UUID for offline sync safety
+  branchId        Int      @map("branch_id")
+  userId          Int      @map("user_id")
+  transactionDate DateTime @default(now()) @map("transaction_date") @db.Timestamptz
+  status          String   // 'DRAFT', 'PAID', 'VOID'
+  paymentMethod   String?  @map("payment_method") // 'CASH', 'QRIS'
+  totalAmount     Decimal  @map("total_amount") @db.Decimal
+  cashReceived    Decimal? @map("cash_received") @db.Decimal
+  voidReason      String?  @map("void_reason")
+  isOfflineSynced Boolean  @default(false) @map("is_offline_synced")
+
+  // Relations
+  branch           Branch            @relation(fields: [branchId], references: [id])
+  user             User              @relation(fields: [userId], references: [id])
+  transactionItems TransactionItem[]
+
+  @@index([branchId])
+  @@index([transactionDate])
+  @@map("transactions")
+}
+
+model TransactionItem {
+  id                 BigInt  @id @default(autoincrement())
+  transactionId      String  @map("transaction_id")
+  productId          Int     @map("product_id")
+  quantity           Int
+  priceAtTransaction Decimal @map("price_at_transaction") @db.Decimal // Price snapshot
+  subtotal           Decimal @db.Decimal
+
+  // Relations
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+  product     Product     @relation(fields: [productId], references: [id])
+
+  @@map("transaction_items")
+}
+
+model DailyClosing {
+  id              Int      @id @default(autoincrement())
+  branchId        Int      @map("branch_id")
+  closingDate     DateTime @map("closing_date") @db.Date
+  totalCashSystem Decimal  @map("total_cash_system") @db.Decimal
+  totalQrisSystem Decimal  @map("total_qris_system") @db.Decimal
+  totalCashActual Decimal  @map("total_cash_actual") @db.Decimal @default(0)
+  totalQrisActual Decimal  @map("total_qris_actual") @db.Decimal @default(0)
+  closingNote     String?  @map("closing_note")
+  closedByUserId  Int      @map("closed_by_user_id")
+  status          String   @default("CLOSED")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  branch   Branch @relation(fields: [branchId], references: [id])
+  closedBy User   @relation(fields: [closedByUserId], references: [id])
+
+  @@map("daily_closings")
+}
+
+// ============================================
+// MODUL 4: DSS & Produksi
+// ============================================
+
+model DssConfig {
+  id                 Int      @id @default(autoincrement())
+  branchId           Int      @map("branch_id")
+  wmaWeights         Json     @map("wma_weights") // e.g. [0.5, 0.3, 0.2]
+  safetyStockPercent Int      @map("safety_stock_percent")
+  lastUpdated        DateTime @default(now()) @map("last_updated") @db.Timestamptz
+
+  // Relations
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@map("dss_configs")
+}
+
+model ProductionPlan {
+  id             Int      @id @default(autoincrement())
+  branchId       Int      @map("branch_id")
+  productId      Int      @map("product_id")
+  planDate       DateTime @map("plan_date") @db.Date
+  recommendedQty Int      @map("recommended_qty")
+  calculationLog String?  @map("calculation_log")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  branch       Branch                  @relation(fields: [branchId], references: [id])
+  product      Product                 @relation(fields: [productId], references: [id])
+  realizations ProductionRealization[]
+
+  @@map("production_plans")
+}
+
+model ProductionRealization {
+  id            Int      @id @default(autoincrement())
+  planId        Int      @map("plan_id")
+  actualQty     Int      @map("actual_qty")
+  deviation     Int      // Actual - Recommended
+  notes         String?
+  inputByUserId Int      @map("input_by_user_id")
+  status        String   // 'IN_PROGRESS', 'COMPLETED'
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  plan    ProductionPlan @relation(fields: [planId], references: [id])
+  inputBy User           @relation(fields: [inputByUserId], references: [id])
+
+  @@map("production_realizations")
+}
+
+// ============================================
+// MODUL 5: Absensi (HR)
+// ============================================
+
+model Attendance {
+  id             BigInt    @id @default(autoincrement())
+  userId         Int       @map("user_id")
+  branchId       Int       @map("branch_id")
+  date           DateTime  @default(now()) @db.Date
+  clockIn        DateTime  @map("clock_in") @db.Timestamptz
+  clockOut       DateTime? @map("clock_out") @db.Timestamptz
+  shiftId        Int?      @map("shift_id") // For future shift feature
+  correctionNote String?   @map("correction_note")
+
+  // Relations
+  user   User   @relation(fields: [userId], references: [id])
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@map("attendance")
+}
+
+// ============================================
+// MODUL 6: Audit & Log Sistem
+// ============================================
+
+model AuditLog {
+  id          BigInt   @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  actionType  String   @map("action_type") // 'CREATE', 'UPDATE', 'DELETE', 'VOID', 'LOGIN'
+  targetTable String   @map("target_table")
+  targetId    String   @map("target_id")
+  oldValue    Json?    @map("old_value")
+  newValue    Json?    @map("new_value")
+  timestamp   DateTime @default(now()) @db.Timestamptz
+  ipAddress   String?  @map("ip_address")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ============================================
+// MODUL 7: Notifikasi
+// ============================================
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      Int      @map("user_id")
+  title       String
+  description String
+  link        String?  @map("link")
+  isRead      Boolean  @default(false) @map("is_read")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
 }

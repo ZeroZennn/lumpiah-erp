@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+
+echo "🔍 Running pre-commit checks..."
+echo ""
+
+npx lint-staged
+
+if [ $? -ne 0 ]; then
+  echo "❌ Linting failed! Please fix the errors above."
+  exit 1
+fi
+
+echo "✅ All checks passed!"
